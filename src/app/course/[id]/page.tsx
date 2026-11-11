@@ -1,7 +1,5 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import { useEffect, useState, use } from 'react';
 // ... rest of your code remains unchanged
 import { supabase } from '@/lib/supabase';
