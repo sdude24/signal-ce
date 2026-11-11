@@ -1,6 +1,9 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState, use } from 'react';
+// ... rest of your code remains unchanged
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { ArrowLeft, Star, MapPin, Award, Clock, DollarSign, CheckCircle2, ShieldAlert } from 'lucide-react';
