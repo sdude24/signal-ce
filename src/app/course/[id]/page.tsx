@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
-// ... rest of your code remains unchanged
+import { useEffect, useState, use, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { ArrowLeft, Star, MapPin, Award, Clock, DollarSign, CheckCircle2, ShieldAlert } from 'lucide-react';
@@ -35,7 +34,7 @@ interface Review {
   created_at: string;
 }
 
-export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+function CourseContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [course, setCourse] = useState<Course | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -75,21 +74,24 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
     e.preventDefault();
     setSubmitting(true);
 
-    const { data, error } = await supabase.from('reviews').insert([
-      {
-        course_id: id,
-        reviewer_role: role,
-        years_in_practice: years,
-        overall_rating: overallRating,
-        clinical_utility: utility,
-        commercial_bias: commercialBias,
-        hands_on_quality: handsOn,
-        value_for_money: value,
-        headline,
-        body,
-        would_recommend: recommend,
-      },
-    ]).select();
+    const { data, error } = await supabase
+      .from('reviews')
+      .insert([
+        {
+          course_id: id,
+          reviewer_role: role,
+          years_in_practice: years,
+          overall_rating: overallRating,
+          clinical_utility: utility,
+          commercial_bias: commercialBias,
+          hands_on_quality: handsOn,
+          value_for_money: value,
+          headline,
+          body,
+          would_recommend: recommend,
+        },
+      ])
+      .select();
 
     if (!error && data) {
       setReviews([data[0], ...reviews]);
@@ -383,5 +385,19 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
         </div>
       </main>
     </div>
+  );
+}
+
+export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-sky-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <CourseContent params={params} />
+    </Suspense>
   );
 }
