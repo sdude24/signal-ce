@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useSearchParams, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { 
@@ -46,49 +46,57 @@ const PROFESSIONS = [
 ];
 
 function DirectoryContent() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Read initial states directly from URL search params
-  const initialProfession = searchParams.get('profession') || 'All';
-  const initialCategory = searchParams.get('category') || 'All';
-  const initialQuery = searchParams.get('q') || '';
-  const initialSort = (searchParams.get('sort') as any) || 'rating';
+  // Initialize from URL search params
+  const [selectedProfession, setSelectedProfession] = useState(() => searchParams.get('profession') || 'All');
+  const [selectedCategory, setSelectedCategory] = useState(() => searchParams.get('category') || 'All');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
+  const [sortBy, setSortBy] = useState<'rating' | 'reviews' | 'credits' | 'cost_asc' | 'newest'>(
+    () => (searchParams.get('sort') as any) || 'rating'
+  );
 
-  const [selectedProfession, setSelectedProfession] = useState(initialProfession);
-  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
-  const [searchQuery, setSearchQuery] = useState(initialQuery);
-  const [sortBy, setSortBy] = useState<'rating' | 'reviews' | 'credits' | 'cost_asc' | 'newest'>(initialSort);
+  // Helper to push or replace history without routing out of the application
+  const updateUrl = (newParams: Record<string, string | null>, method: 'push' | 'replace' = 'push') => {
+    const params = new URLSearchParams(window.location.search);
 
-  // Helper to update URL query params without full page reloads
-  const updateUrlParams = useCallback((paramsToUpdate: Record<string, string | null>) => {
-    const current = new URLSearchParams(searchParams.toString());
-
-    Object.entries(paramsToUpdate).forEach(([key, value]) => {
+    Object.entries(newParams).forEach(([key, value]) => {
       if (!value || value === 'All' || (key === 'sort' && value === 'rating')) {
-        current.delete(key);
+        params.delete(key);
       } else {
-        current.set(key, value);
+        params.set(key, value);
       }
     });
 
-    const queryString = current.toString();
-    const targetUrl = queryString ? `${pathname}?${queryString}` : pathname;
-    router.replace(targetUrl, { scroll: false });
-  }, [searchParams, pathname, router]);
+    const queryString = params.toString();
+    const newUrl = queryString ? `${pathname}?${queryString}` : pathname;
 
-  // Keep state synchronized if user clicks browser back/forward buttons
+    if (method === 'push') {
+      window.history.pushState(null, '', newUrl);
+    } else {
+      window.history.replaceState(null, '', newUrl);
+    }
+  };
+
+  // Sync state when browser Back or Forward button is clicked
   useEffect(() => {
-    setSelectedProfession(searchParams.get('profession') || 'All');
-    setSelectedCategory(searchParams.get('category') || 'All');
-    setSearchQuery(searchParams.get('q') || '');
-    setSortBy((searchParams.get('sort') as any) || 'rating');
-  }, [searchParams]);
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      setSelectedProfession(params.get('profession') || 'All');
+      setSelectedCategory(params.get('category') || 'All');
+      setSearchQuery(params.get('q') || '');
+      setSortBy((params.get('sort') as any) || 'rating');
+    };
 
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Fetch catalog once on mount
   useEffect(() => {
     async function fetchCatalog() {
       setLoading(true);
@@ -116,42 +124,38 @@ function DirectoryContent() {
     return ['All', ...unique.sort()];
   }, [courses, selectedProfession]);
 
-  // Auto-reset category if switching professions invalidates it
-  useEffect(() => {
-    if (selectedCategory !== 'All' && !availableCategories.includes(selectedCategory)) {
-      setSelectedCategory('All');
-      updateUrlParams({ category: null });
-    }
-  }, [selectedProfession, availableCategories, selectedCategory, updateUrlParams]);
-
-  // Handler functions that update both state and URL
+  // Tab switch
   const handleProfessionChange = (prof: string) => {
     setSelectedProfession(prof);
     setSelectedCategory('All');
-    updateUrlParams({ profession: prof, category: null });
+    updateUrl({ profession: prof, category: null }, 'push');
   };
 
+  // Specialty chip click
   const handleCategoryChange = (cat: string) => {
     setSelectedCategory(cat);
-    updateUrlParams({ category: cat });
+    updateUrl({ category: cat }, 'push');
   };
 
-  const handleSearchChange = (q: string) => {
-    setSearchQuery(q);
-    updateUrlParams({ q: q || null });
-  };
-
+  // Sort change
   const handleSortChange = (sort: any) => {
     setSortBy(sort);
-    updateUrlParams({ sort });
+    updateUrl({ sort }, 'push');
   };
 
+  // Search input typing (uses replaceState so Back button doesn't cycle individual letters)
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    updateUrl({ q: q || null }, 'replace');
+  };
+
+  // Reset all filters
   const clearFilters = () => {
     setSelectedProfession('All');
     setSelectedCategory('All');
     setSearchQuery('');
     setSortBy('rating');
-    router.replace(pathname, { scroll: false });
+    window.history.pushState(null, '', pathname);
   };
 
   // Filter and Rank Pipeline
@@ -477,7 +481,6 @@ function DirectoryContent() {
   );
 }
 
-// Suspense wrapper required by Next.js for client components consuming useSearchParams
 export default function DirectoryPage() {
   return (
     <Suspense fallback={
