@@ -176,7 +176,7 @@ export default function DirectoryPage() {
 
           <div className="flex items-center gap-3">
             <Link
-              href="/add-course"
+              href="/submit"
               className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs"
             >
               + List Course
