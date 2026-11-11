@@ -36,7 +36,7 @@ interface Course {
   website_url: string | null;
   reviews?: { overall_rating: number }[];
 }
-
+// SignalCE Multi-Profession Directory V2
 const PROFESSIONS = [
   { id: 'All', label: 'All Fields', icon: BookOpen },
   { id: 'Dentistry', label: 'Dentistry', icon: Sparkles },
