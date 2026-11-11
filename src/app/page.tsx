@@ -1,7 +1,7 @@
 'use client';
 
-
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { 
@@ -36,7 +36,7 @@ interface Course {
   website_url: string | null;
   reviews?: { overall_rating: number }[];
 }
-// SignalCE Multi-Profession Directory V2
+
 const PROFESSIONS = [
   { id: 'All', label: 'All Fields', icon: BookOpen },
   { id: 'Dentistry', label: 'Dentistry', icon: Sparkles },
@@ -45,15 +45,49 @@ const PROFESSIONS = [
   { id: 'Nursing', label: 'Nursing', icon: HeartPulse },
 ];
 
-export default function DirectoryPage() {
+function DirectoryContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filter & Search State
-  const [selectedProfession, setSelectedProfession] = useState('All');
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'rating' | 'reviews' | 'credits' | 'cost_asc' | 'newest'>('rating');
+  // Read initial states directly from URL search params
+  const initialProfession = searchParams.get('profession') || 'All';
+  const initialCategory = searchParams.get('category') || 'All';
+  const initialQuery = searchParams.get('q') || '';
+  const initialSort = (searchParams.get('sort') as any) || 'rating';
+
+  const [selectedProfession, setSelectedProfession] = useState(initialProfession);
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const [sortBy, setSortBy] = useState<'rating' | 'reviews' | 'credits' | 'cost_asc' | 'newest'>(initialSort);
+
+  // Helper to update URL query params without full page reloads
+  const updateUrlParams = useCallback((paramsToUpdate: Record<string, string | null>) => {
+    const current = new URLSearchParams(searchParams.toString());
+
+    Object.entries(paramsToUpdate).forEach(([key, value]) => {
+      if (!value || value === 'All' || (key === 'sort' && value === 'rating')) {
+        current.delete(key);
+      } else {
+        current.set(key, value);
+      }
+    });
+
+    const queryString = current.toString();
+    const targetUrl = queryString ? `${pathname}?${queryString}` : pathname;
+    router.replace(targetUrl, { scroll: false });
+  }, [searchParams, pathname, router]);
+
+  // Keep state synchronized if user clicks browser back/forward buttons
+  useEffect(() => {
+    setSelectedProfession(searchParams.get('profession') || 'All');
+    setSelectedCategory(searchParams.get('category') || 'All');
+    setSearchQuery(searchParams.get('q') || '');
+    setSortBy((searchParams.get('sort') as any) || 'rating');
+  }, [searchParams]);
 
   useEffect(() => {
     async function fetchCatalog() {
@@ -82,12 +116,43 @@ export default function DirectoryPage() {
     return ['All', ...unique.sort()];
   }, [courses, selectedProfession]);
 
-  // Reset category filter if profession switch renders current category invalid
+  // Auto-reset category if switching professions invalidates it
   useEffect(() => {
     if (selectedCategory !== 'All' && !availableCategories.includes(selectedCategory)) {
       setSelectedCategory('All');
+      updateUrlParams({ category: null });
     }
-  }, [selectedProfession, availableCategories, selectedCategory]);
+  }, [selectedProfession, availableCategories, selectedCategory, updateUrlParams]);
+
+  // Handler functions that update both state and URL
+  const handleProfessionChange = (prof: string) => {
+    setSelectedProfession(prof);
+    setSelectedCategory('All');
+    updateUrlParams({ profession: prof, category: null });
+  };
+
+  const handleCategoryChange = (cat: string) => {
+    setSelectedCategory(cat);
+    updateUrlParams({ category: cat });
+  };
+
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    updateUrlParams({ q: q || null });
+  };
+
+  const handleSortChange = (sort: any) => {
+    setSortBy(sort);
+    updateUrlParams({ sort });
+  };
+
+  const clearFilters = () => {
+    setSelectedProfession('All');
+    setSelectedCategory('All');
+    setSearchQuery('');
+    setSortBy('rating');
+    router.replace(pathname, { scroll: false });
+  };
 
   // Filter and Rank Pipeline
   const filteredAndSortedCourses = useMemo(() => {
@@ -132,7 +197,7 @@ export default function DirectoryPage() {
 
       if (sortBy === 'rating') {
         if (bAvg !== aAvg) return bAvg - aAvg;
-        return bReviews.length - aReviews.length; // tiebreaker: review count
+        return bReviews.length - aReviews.length;
       }
       if (sortBy === 'reviews') {
         return bReviews.length - aReviews.length;
@@ -143,18 +208,11 @@ export default function DirectoryPage() {
       if (sortBy === 'cost_asc') {
         return Number(a.cost_estimate) - Number(b.cost_estimate);
       }
-      return 0; // 'newest' uses default supabase order
+      return 0;
     });
 
     return result;
   }, [courses, selectedProfession, selectedCategory, searchQuery, sortBy]);
-
-  const clearFilters = () => {
-    setSelectedProfession('All');
-    setSelectedCategory('All');
-    setSearchQuery('');
-    setSortBy('rating');
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-28">
@@ -207,12 +265,12 @@ export default function DirectoryPage() {
                 type="text"
                 placeholder="Search by topic, instructor, provider (e.g. Kois, anterior composite, GLP-1)..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all placeholder:text-slate-400"
               />
               {searchQuery && (
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => handleSearchChange('')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 hover:text-slate-600"
                 >
                   Clear
@@ -226,7 +284,7 @@ export default function DirectoryPage() {
                 <ArrowUpDown className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <select
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
+                  onChange={(e) => handleSortChange(e.target.value)}
                   className="w-full pl-10 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer"
                 >
                   <option value="rating">Highest Rated</option>
@@ -251,7 +309,7 @@ export default function DirectoryPage() {
               return (
                 <button
                   key={p.id}
-                  onClick={() => setSelectedProfession(p.id)}
+                  onClick={() => handleProfessionChange(p.id)}
                   className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
                     active
                       ? 'bg-sky-600 text-white shadow-xs'
@@ -279,7 +337,7 @@ export default function DirectoryPage() {
                 return (
                   <button
                     key={cat}
-                    onClick={() => setSelectedCategory(cat)}
+                    onClick={() => handleCategoryChange(cat)}
                     className={`text-xs px-2.5 py-1 rounded-md font-medium whitespace-nowrap transition-colors ${
                       active
                         ? 'bg-slate-900 text-white font-semibold'
@@ -303,7 +361,7 @@ export default function DirectoryPage() {
             {searchQuery && <span> matching &ldquo;<span className="font-semibold text-slate-800">{searchQuery}</span>&rdquo;</span>}
           </div>
 
-          {(selectedProfession !== 'All' || selectedCategory !== 'All' || searchQuery) && (
+          {(selectedProfession !== 'All' || selectedCategory !== 'All' || searchQuery || sortBy !== 'rating') && (
             <button
               onClick={clearFilters}
               className="flex items-center gap-1 text-sky-600 hover:text-sky-700 font-semibold"
@@ -416,5 +474,18 @@ export default function DirectoryPage() {
         )}
       </main>
     </div>
+  );
+}
+
+// Suspense wrapper required by Next.js for client components consuming useSearchParams
+export default function DirectoryPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-sky-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <DirectoryContent />
+    </Suspense>
   );
 }
