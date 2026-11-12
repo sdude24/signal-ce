@@ -4,21 +4,27 @@ import { useEffect, useState, useMemo, Suspense } from 'react';
 import { useSearchParams, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { 
-  Star, 
-  MapPin, 
-  Award, 
-  Clock, 
-  DollarSign, 
-  Search, 
-  SlidersHorizontal, 
-  ArrowUpDown, 
+import {
+  Star,
+  MapPin,
+  Award,
+  Clock,
+  DollarSign,
+  Search,
+  SlidersHorizontal,
+  ArrowUpDown,
   Sparkles,
   BookOpen,
   Stethoscope,
   Pill,
   HeartPulse,
-  RotateCcw
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Filter,
+  ArrowUpRight,
+  X
 } from 'lucide-react';
 
 interface Course {
@@ -38,12 +44,43 @@ interface Course {
 }
 
 const PROFESSIONS = [
-  { id: 'All', label: 'All Fields', icon: BookOpen },
+  { id: 'All', label: 'All Disciplines', icon: BookOpen },
   { id: 'Dentistry', label: 'Dentistry', icon: Sparkles },
   { id: 'Medicine', label: 'Medicine', icon: Stethoscope },
   { id: 'Pharmacy', label: 'Pharmacy', icon: Pill },
   { id: 'Nursing', label: 'Nursing', icon: HeartPulse },
 ];
+
+// Doherty Threshold: Shimmer Skeleton matching exact card geometry to eliminate layout shift
+function CourseSkeletonGrid() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {Array.from({ length: 6 }).map((_, idx) => (
+        <div
+          key={idx}
+          className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col justify-between h-[230px] animate-pulse"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex gap-2">
+                <div className="h-5 w-16 bg-slate-200 rounded-md" />
+                <div className="h-5 w-24 bg-slate-100 rounded-md" />
+              </div>
+              <div className="h-5 w-12 bg-slate-200 rounded-md" />
+            </div>
+            <div className="h-5 w-full bg-slate-200 rounded mb-2" />
+            <div className="h-5 w-3/4 bg-slate-200 rounded mb-3" />
+            <div className="h-4 w-1/2 bg-slate-100 rounded" />
+          </div>
+          <div className="pt-3 border-t border-slate-100 flex justify-between">
+            <div className="h-4 w-20 bg-slate-100 rounded" />
+            <div className="h-4 w-16 bg-slate-200 rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function DirectoryContent() {
   const pathname = usePathname();
@@ -52,7 +89,7 @@ function DirectoryContent() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Initialize from URL search params
+  // URL-synced Filter State
   const [selectedProfession, setSelectedProfession] = useState(() => searchParams.get('profession') || 'All');
   const [selectedCategory, setSelectedCategory] = useState(() => searchParams.get('category') || 'All');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
@@ -60,7 +97,10 @@ function DirectoryContent() {
     () => (searchParams.get('sort') as any) || 'rating'
   );
 
-  // Helper to push or replace history without routing out of the application
+  // Hick's & Miller's Law: Collapse secondary specialty filters by default (unless active in URL)
+  const [specialtyExpanded, setSpecialtyExpanded] = useState(() => Boolean(searchParams.get('category')));
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
   const updateUrl = (newParams: Record<string, string | null>, method: 'push' | 'replace' = 'push') => {
     const params = new URLSearchParams(window.location.search);
 
@@ -82,21 +122,21 @@ function DirectoryContent() {
     }
   };
 
-  // Sync state when browser Back or Forward button is clicked
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
+      const cat = params.get('category') || 'All';
       setSelectedProfession(params.get('profession') || 'All');
-      setSelectedCategory(params.get('category') || 'All');
+      setSelectedCategory(cat);
       setSearchQuery(params.get('q') || '');
       setSortBy((params.get('sort') as any) || 'rating');
+      if (cat !== 'All') setSpecialtyExpanded(true);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Fetch catalog once on mount
   useEffect(() => {
     async function fetchCatalog() {
       setLoading(true);
@@ -114,42 +154,36 @@ function DirectoryContent() {
     fetchCatalog();
   }, []);
 
-  // Compute available specialty categories based on selected profession
   const availableCategories = useMemo(() => {
     const relevant = selectedProfession === 'All'
       ? courses
       : courses.filter(c => (c.profession || 'Dentistry').toLowerCase() === selectedProfession.toLowerCase());
-    
+
     const unique = Array.from(new Set(relevant.map(c => c.category).filter(Boolean)));
     return ['All', ...unique.sort()];
   }, [courses, selectedProfession]);
 
-  // Tab switch
   const handleProfessionChange = (prof: string) => {
     setSelectedProfession(prof);
     setSelectedCategory('All');
     updateUrl({ profession: prof, category: null }, 'push');
   };
 
-  // Specialty chip click
   const handleCategoryChange = (cat: string) => {
     setSelectedCategory(cat);
     updateUrl({ category: cat }, 'push');
   };
 
-  // Sort change
   const handleSortChange = (sort: any) => {
     setSortBy(sort);
     updateUrl({ sort }, 'push');
   };
 
-  // Search input typing (uses replaceState so Back button doesn't cycle individual letters)
   const handleSearchChange = (q: string) => {
     setSearchQuery(q);
     updateUrl({ q: q || null }, 'replace');
   };
 
-  // Reset all filters
   const clearFilters = () => {
     setSelectedProfession('All');
     setSelectedCategory('All');
@@ -158,23 +192,25 @@ function DirectoryContent() {
     window.history.pushState(null, '', pathname);
   };
 
-  // Filter and Rank Pipeline
+  const activeFilterCount =
+    (selectedProfession !== 'All' ? 1 : 0) +
+    (selectedCategory !== 'All' ? 1 : 0) +
+    (searchQuery.trim() !== '' ? 1 : 0) +
+    (sortBy !== 'rating' ? 1 : 0);
+
   const filteredAndSortedCourses = useMemo(() => {
     let result = [...courses];
 
-    // 1. Profession Filter
     if (selectedProfession !== 'All') {
       result = result.filter(
         c => (c.profession || 'Dentistry').toLowerCase() === selectedProfession.toLowerCase()
       );
     }
 
-    // 2. Specialty Category Filter
     if (selectedCategory !== 'All') {
       result = result.filter(c => c.category === selectedCategory);
     }
 
-    // 3. Search Query Filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -187,7 +223,6 @@ function DirectoryContent() {
       );
     }
 
-    // 4. Sorting & Ranking
     result.sort((a, b) => {
       const aReviews = a.reviews || [];
       const bReviews = b.reviews || [];
@@ -218,276 +253,387 @@ function DirectoryContent() {
     return result;
   }, [courses, selectedProfession, selectedCategory, searchQuery, sortBy]);
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-28">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center text-white font-black text-lg">
-                S
-              </div>
-              <span className="font-extrabold text-xl tracking-tight text-slate-900">
-                Signal<span className="text-sky-600">CE</span>
-              </span>
-            </Link>
-            <span className="hidden sm:inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-              Unfiltered Clinician Reviews
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Link
-              href="/submit"
-              className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-xs"
-            >
-              + List Course
-            </Link>
-          </div>
+  // Reusable Sidebar Filter Panels (Law of Proximity + Law of Similarity)
+  const SidebarPanels = () => (
+    <div className="space-y-4">
+      {/* Panel 1: Discipline Selector */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            Discipline
+          </span>
+          <span className="text-xs font-medium text-slate-400">
+            {courses.length} total
+          </span>
         </div>
-      </header>
+        <div className="p-2 space-y-1">
+          {PROFESSIONS.map((p) => {
+            const Icon = p.icon;
+            const count = p.id === 'All'
+              ? courses.length
+              : courses.filter(c => (c.profession || 'Dentistry').toLowerCase() === p.id.toLowerCase()).length;
+            const active = selectedProfession === p.id;
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        {/* Hero Section */}
-        <div className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mb-2">
-            Verified Continuing Education
-          </h1>
-          <p className="text-slate-600 text-sm sm:text-base max-w-3xl">
-            Real peer evaluations on clinical applicability, hands-on value, and commercial bias across healthcare professions.
-          </p>
-        </div>
-
-        {/* Search & Sort Toolbar */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs mb-6 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-            {/* Search Input */}
-            <div className="relative md:col-span-8">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search by topic, instructor, provider (e.g. Kois, anterior composite, GLP-1)..."
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all placeholder:text-slate-400"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => handleSearchChange('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 hover:text-slate-600"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {/* Sort Dropdown */}
-            <div className="relative md:col-span-4 flex items-center gap-2">
-              <div className="relative w-full">
-                <ArrowUpDown className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <select
-                  value={sortBy}
-                  onChange={(e) => handleSortChange(e.target.value)}
-                  className="w-full pl-10 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer"
-                >
-                  <option value="rating">Highest Rated</option>
-                  <option value="reviews">Most Reviewed</option>
-                  <option value="credits">Credit Hours (High to Low)</option>
-                  <option value="cost_asc">Tuition (Lowest / Free First)</option>
-                  <option value="newest">Recently Added</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Profession Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-2 border-t border-slate-100">
-            {PROFESSIONS.map((p) => {
-              const Icon = p.icon;
-              const count = p.id === 'All'
-                ? courses.length
-                : courses.filter(c => (c.profession || 'Dentistry').toLowerCase() === p.id.toLowerCase()).length;
-              const active = selectedProfession === p.id;
-
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => handleProfessionChange(p.id)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-                    active
-                      ? 'bg-sky-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+            return (
+              <button
+                key={p.id}
+                onClick={() => {
+                  handleProfessionChange(p.id);
+                  setMobileFiltersOpen(false);
+                }}
+                // Fitts's Law: Full-width h-10 click targets with consistent spacing
+                className={`w-full h-10 px-3 rounded-lg flex items-center justify-between text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-sky-600 text-white font-semibold shadow-2xs'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} />
+                  <span>{p.label}</span>
+                </span>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
+                    active ? 'bg-sky-700 text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{p.label}</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${active ? 'bg-sky-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-          {/* Specialty Sub-Filter Chips */}
-          {availableCategories.length > 2 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pt-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
-                <SlidersHorizontal className="w-3 h-3" /> Specialty:
-              </span>
+      {/* Panel 2: Collapsible Specialty Filter (Hick's & Miller's Law) */}
+      {availableCategories.length > 2 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setSpecialtyExpanded(!specialtyExpanded)}
+            className="w-full px-4 py-3 flex items-center justify-between bg-slate-50/70 hover:bg-slate-100/70 transition-colors text-left"
+          >
+            <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-700">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+              Specialty
+              {selectedCategory !== 'All' && (
+                <span className="w-2 h-2 rounded-full bg-sky-600" />
+              )}
+            </span>
+            {specialtyExpanded ? (
+              <ChevronUp className="w-4 h-4 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            )}
+          </button>
+
+          {specialtyExpanded && (
+            <div className="p-2 border-t border-slate-100 space-y-1 max-h-72 overflow-y-auto">
               {availableCategories.map((cat) => {
                 const active = selectedCategory === cat;
                 return (
                   <button
                     key={cat}
-                    onClick={() => handleCategoryChange(cat)}
-                    className={`text-xs px-2.5 py-1 rounded-md font-medium whitespace-nowrap transition-colors ${
+                    onClick={() => {
+                      handleCategoryChange(cat);
+                      setMobileFiltersOpen(false);
+                    }}
+                    className={`w-full h-9 px-3 rounded-lg flex items-center justify-between text-xs font-medium transition-colors ${
                       active
                         ? 'bg-slate-900 text-white font-semibold'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                        : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    {cat}
+                    <span className="truncate">{cat}</span>
+                    {active && <span className="text-[10px] uppercase tracking-wider text-sky-300">Active</span>}
                   </button>
                 );
               })}
             </div>
           )}
         </div>
+      )}
 
-        {/* Results Counter & Active Filter Badge */}
-        <div className="flex items-center justify-between text-xs text-slate-500 mb-4 px-1">
-          <div>
-            Showing <span className="font-bold text-slate-900">{filteredAndSortedCourses.length}</span> verified courses
-            {selectedProfession !== 'All' && <span> in <span className="font-semibold text-slate-800">{selectedProfession}</span></span>}
-            {selectedCategory !== 'All' && <span> • <span className="font-semibold text-slate-800">{selectedCategory}</span></span>}
-            {searchQuery && <span> matching &ldquo;<span className="font-semibold text-slate-800">{searchQuery}</span>&rdquo;</span>}
+      {/* Reset Action Card (only shown when filters are active) */}
+      {activeFilterCount > 0 && (
+        <button
+          onClick={clearFilters}
+          className="w-full h-10 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-2xs"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+          Reset All Filters ({activeFilterCount})
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24">
+      {/* Jakob's Law: Familiar Persistent Admin Top Bar */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link href="/" onClick={clearFilters} className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center text-white font-black text-base shadow-2xs">
+                S
+              </div>
+              <span className="font-extrabold text-xl tracking-tight text-slate-900">
+                Signal<span className="text-sky-600">CE</span>
+              </span>
+            </Link>
+            <span className="hidden md:inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200/80">
+              Clinician-Verified Directory
+            </span>
           </div>
 
-          {(selectedProfession !== 'All' || selectedCategory !== 'All' || searchQuery || sortBy !== 'rating') && (
+          {/* Fitts's Law & Goal-Gradient: Prominent Primary CTA in top-right */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={clearFilters}
-              className="flex items-center gap-1 text-sky-600 hover:text-sky-700 font-semibold"
+              onClick={() => setMobileFiltersOpen(true)}
+              className="lg:hidden h-10 px-3.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold flex items-center gap-2 hover:bg-slate-50"
             >
-              <RotateCcw className="w-3 h-3" /> Reset Filters
+              <Filter className="w-4 h-4" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-sky-600 text-white text-[10px]">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
-          )}
+
+            <Link
+              href="/submit"
+              className="h-10 px-4 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors shadow-2xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Course</span>
+            </Link>
+          </div>
         </div>
+      </header>
 
-        {/* Directory Grid */}
-        {loading ? (
-          <div className="py-24 flex flex-col items-center justify-center gap-3">
-            <div className="w-8 h-8 border-4 border-sky-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs font-semibold text-slate-400">Loading accredited course database...</p>
-          </div>
-        ) : filteredAndSortedCourses.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
-            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400">
-              <Search className="w-5 h-5" />
+      {/* Mobile Drawer Modal (Jakob's Law) */}
+      {mobileFiltersOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex">
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs"
+            onClick={() => setMobileFiltersOpen(false)}
+          />
+          <div className="relative w-80 max-w-[85vw] bg-slate-50 h-full p-4 overflow-y-auto z-10 shadow-xl">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
+              <span className="font-bold text-sm text-slate-900">Filter Directory</span>
+              <button
+                onClick={() => setMobileFiltersOpen(false)}
+                className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <h3 className="font-bold text-slate-900 text-base mb-1">No courses match your criteria</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
-              Try broadening your specialty selection or clear your search terms.
-            </p>
-            <button
-              onClick={clearFilters}
-              className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
-            >
-              Clear All Filters
-            </button>
+            <SidebarPanels />
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredAndSortedCourses.map((course) => {
-              const reviews = course.reviews || [];
-              const avgRating = reviews.length
-                ? (reviews.reduce((sum, r) => sum + Number(r.overall_rating), 0) / reviews.length).toFixed(1)
-                : null;
+        </div>
+      )}
 
-              return (
-                <Link
-                  key={course.id}
-                  href={`/course/${course.id}`}
-                  className="group bg-white rounded-2xl border border-slate-200 hover:border-sky-500 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+      {/* Main Admin Workspace Container */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* Left Filter Sidebar (Desktop) */}
+          <aside className="hidden lg:block lg:col-span-3 sticky top-22">
+            <SidebarPanels />
+          </aside>
+
+          {/* Right Main Content Canvas */}
+          <main className="lg:col-span-9 space-y-5">
+            
+            {/* Law of Proximity: Unified Search & Sort Control Panel */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex flex-col sm:flex-row gap-3">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search courses, providers, instructors, or clinical topics..."
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    className="w-full h-10 pl-10 pr-16 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all placeholder:text-slate-400"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => handleSearchChange('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 text-xs font-semibold text-slate-500 hover:text-slate-800 rounded"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Sort Selector */}
+                <div className="relative sm:w-56">
+                  <ArrowUpDown className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <select
+                    value={sortBy}
+                    onChange={(e) => handleSortChange(e.target.value)}
+                    className="w-full h-10 pl-10 pr-8 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer"
+                  >
+                    <option value="rating">Sort: Highest Rated</option>
+                    <option value="reviews">Sort: Most Reviewed</option>
+                    <option value="credits">Sort: Credit Hours</option>
+                    <option value="cost_asc">Sort: Lowest Tuition</option>
+                    <option value="newest">Sort: Recently Added</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Active Status Bar */}
+              <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span>
+                    Showing <strong className="text-slate-900 font-semibold">{filteredAndSortedCourses.length}</strong> courses
+                  </span>
+                  {selectedProfession !== 'All' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 font-medium border border-sky-200/60">
+                      {selectedProfession}
+                    </span>
+                  )}
+                  {selectedCategory !== 'All' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-medium border border-slate-200">
+                      {selectedCategory}
+                    </span>
+                  )}
+                </div>
+
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={clearFilters}
+                    className="text-sky-600 hover:text-sky-700 font-semibold inline-flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Directory Results Area */}
+            {loading ? (
+              <CourseSkeletonGrid />
+            ) : filteredAndSortedCourses.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-2xs">
+                <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400">
+                  <Search className="w-5 h-5" />
+                </div>
+                <h3 className="font-semibold text-slate-900 text-base mb-1">
+                  No matching courses found
+                </h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto mb-5">
+                  No courses match your active combination of discipline, specialty, and search keywords.
+                </p>
+                <button
+                  onClick={clearFilters}
+                  className="h-10 px-5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors"
                 >
-                  <div>
-                    {/* Header Chips */}
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
-                          {course.profession || 'Dentistry'}
-                        </span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 truncate max-w-[140px]">
-                          {course.category}
-                        </span>
+                  Reset All Filters
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredAndSortedCourses.map((course) => {
+                  const reviews = course.reviews || [];
+                  const avgRating = reviews.length
+                    ? (reviews.reduce((sum, r) => sum + Number(r.overall_rating), 0) / reviews.length).toFixed(1)
+                    : null;
+
+                  return (
+                    <Link
+                      key={course.id}
+                      href={`/course/${course.id}`}
+                      className="group bg-white rounded-xl border border-slate-200 hover:border-sky-500 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between"
+                    >
+                      <div>
+                        {/* Law of Similarity: Uniform badge heights and spacing */}
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 shrink-0">
+                              {course.profession || 'Dentistry'}
+                            </span>
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 truncate">
+                              {course.category}
+                            </span>
+                          </div>
+
+                          {avgRating ? (
+                            <div className="flex items-center gap-1 bg-amber-50 border border-amber-200/60 text-amber-900 px-2 py-0.5 rounded-md font-bold text-xs shrink-0">
+                              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                              <span>{avgRating}</span>
+                              <span className="text-slate-500 font-normal text-[11px]">({reviews.length})</span>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-medium text-slate-400 bg-slate-50 border border-slate-200/70 px-2 py-0.5 rounded-md shrink-0">
+                              No reviews
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Aesthetic-Usability: Clear typographic hierarchy */}
+                        <h2 className="font-semibold text-slate-900 text-base leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-1.5">
+                          {course.title}
+                        </h2>
+                        <p className="text-xs text-slate-500 font-medium mb-4 line-clamp-1">
+                          {course.provider}
+                          {course.instructor && ` • ${course.instructor}`}
+                        </p>
                       </div>
 
-                      {avgRating ? (
-                        <div className="flex items-center gap-1 bg-amber-50 text-amber-900 px-2 py-0.5 rounded-md font-bold text-xs">
-                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                          <span>{avgRating}</span>
-                          <span className="text-slate-400 font-normal text-[10px]">({reviews.length})</span>
+                      {/* Metadata Footer */}
+                      <div className="pt-3 border-t border-slate-100 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="inline-flex items-center gap-1.5 text-slate-700 font-semibold">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            {course.credits} Credits
+                          </span>
+
+                          <span className="inline-flex items-center gap-1 text-slate-900 font-bold">
+                            <DollarSign className="w-3.5 h-3.5 text-slate-400" />
+                            {Number(course.cost_estimate) > 0
+                              ? Number(course.cost_estimate).toLocaleString()
+                              : 'Free'}
+                          </span>
                         </div>
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
-                          Unreviewed
-                        </span>
-                      )}
-                    </div>
 
-                    {/* Course Title & Provider */}
-                    <h2 className="font-bold text-slate-900 text-base leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-1.5">
-                      {course.title}
-                    </h2>
-                    <p className="text-xs text-slate-500 font-medium mb-4 line-clamp-1">
-                      {course.provider} {course.instructor && `• ${course.instructor}`}
-                    </p>
-                  </div>
-
-                  {/* Course Details Bottom Bar */}
-                  <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="font-semibold text-slate-800">{course.credits} CE</span>
-                      <span className="text-[10px] text-slate-400 truncate">({course.format?.split(' ')[0]})</span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <DollarSign className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="font-semibold text-slate-800">
-                        {Number(course.cost_estimate) > 0 ? `$${Number(course.cost_estimate).toLocaleString()}` : 'Free'}
-                      </span>
-                    </div>
-
-                    <div className="col-span-2 flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                      <span className="flex items-center gap-1 truncate max-w-[170px]">
-                        <MapPin className="w-3 h-3 text-slate-300 shrink-0" />
-                        {course.location}
-                      </span>
-                      <span className="flex items-center gap-1 font-medium text-slate-500 shrink-0">
-                        <Award className="w-3 h-3 text-sky-500" />
-                        {course.accreditation?.split(' ')[0] || 'Accredited'}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </main>
+                        <div className="flex items-center justify-between text-[11px] text-slate-400">
+                          <span className="inline-flex items-center gap-1 truncate max-w-[155px]">
+                            <MapPin className="w-3 h-3 text-slate-300 shrink-0" />
+                            {course.location}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-slate-500 font-medium shrink-0 group-hover:text-sky-600 transition-colors">
+                            <Award className="w-3 h-3 text-sky-500" />
+                            {course.accreditation?.split(' ')[0] || 'Accredited'}
+                            <ArrowUpRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function DirectoryPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-sky-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 p-8 max-w-7xl mx-auto">
+          <CourseSkeletonGrid />
+        </div>
+      }
+    >
       <DirectoryContent />
     </Suspense>
   );
