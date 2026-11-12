@@ -2,15 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export async function POST(req: NextRequest) {
   try {
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ggsuhfqmuqsavlprxowb.supabase.co';
+    const supabaseKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_O1Of50vyXXNODDaWulJLEg_j6OgSEYN';
+
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { isVerified: false, status: 'pending_manual', reason: 'Missing GEMINI_API_KEY on server' },
+        { status: 200 }
+      );
+    }
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const { reviewId, proofPath, expectedTitle, expectedProvider } = await req.json();
 
     if (!reviewId || !proofPath) {
