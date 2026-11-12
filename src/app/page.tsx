@@ -51,30 +51,32 @@ const PROFESSIONS = [
   { id: 'Nursing', label: 'Nursing', icon: HeartPulse },
 ];
 
-// Doherty Threshold: Shimmer Skeleton matching exact card geometry to eliminate layout shift
+// Shimmer Skeleton matching the spacious 2-column card geometry
 function CourseSkeletonGrid() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {Array.from({ length: 6 }).map((_, idx) => (
         <div
           key={idx}
-          className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col justify-between h-[230px] animate-pulse"
+          className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 flex flex-col justify-between min-h-[270px] animate-pulse"
         >
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-5">
               <div className="flex gap-2">
-                <div className="h-5 w-16 bg-slate-200 rounded-md" />
-                <div className="h-5 w-24 bg-slate-100 rounded-md" />
+                <div className="h-6 w-20 bg-slate-200 rounded-md" />
+                <div className="h-6 w-28 bg-slate-100 rounded-md" />
               </div>
-              <div className="h-5 w-12 bg-slate-200 rounded-md" />
+              <div className="h-6 w-14 bg-slate-200 rounded-md" />
             </div>
-            <div className="h-5 w-full bg-slate-200 rounded mb-2" />
-            <div className="h-5 w-3/4 bg-slate-200 rounded mb-3" />
+            <div className="h-6 w-full bg-slate-200 rounded mb-2.5" />
+            <div className="h-6 w-3/4 bg-slate-200 rounded mb-4" />
             <div className="h-4 w-1/2 bg-slate-100 rounded" />
           </div>
-          <div className="pt-3 border-t border-slate-100 flex justify-between">
-            <div className="h-4 w-20 bg-slate-100 rounded" />
-            <div className="h-4 w-16 bg-slate-200 rounded" />
+          <div className="pt-5 mt-6 border-t border-slate-100 grid grid-cols-2 gap-3">
+            <div className="h-4 w-24 bg-slate-100 rounded" />
+            <div className="h-4 w-20 bg-slate-200 rounded" />
+            <div className="h-4 w-28 bg-slate-100 rounded" />
+            <div className="h-4 w-24 bg-slate-100 rounded" />
           </div>
         </div>
       ))}
@@ -89,7 +91,6 @@ function DirectoryContent() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // URL-synced Filter State
   const [selectedProfession, setSelectedProfession] = useState(() => searchParams.get('profession') || 'All');
   const [selectedCategory, setSelectedCategory] = useState(() => searchParams.get('category') || 'All');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
@@ -97,7 +98,6 @@ function DirectoryContent() {
     () => (searchParams.get('sort') as any) || 'rating'
   );
 
-  // Hick's & Miller's Law: Collapse secondary specialty filters by default (unless active in URL)
   const [specialtyExpanded, setSpecialtyExpanded] = useState(() => Boolean(searchParams.get('category')));
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
@@ -253,10 +253,8 @@ function DirectoryContent() {
     return result;
   }, [courses, selectedProfession, selectedCategory, searchQuery, sortBy]);
 
-  // Reusable Sidebar Filter Panels (Law of Proximity + Law of Similarity)
   const SidebarPanels = () => (
     <div className="space-y-4">
-      {/* Panel 1: Discipline Selector */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
@@ -281,7 +279,6 @@ function DirectoryContent() {
                   handleProfessionChange(p.id);
                   setMobileFiltersOpen(false);
                 }}
-                // Fitts's Law: Full-width h-10 click targets with consistent spacing
                 className={`w-full h-10 px-3 rounded-lg flex items-center justify-between text-sm font-medium transition-colors ${
                   active
                     ? 'bg-sky-600 text-white font-semibold shadow-2xs'
@@ -305,7 +302,6 @@ function DirectoryContent() {
         </div>
       </div>
 
-      {/* Panel 2: Collapsible Specialty Filter (Hick's & Miller's Law) */}
       {availableCategories.length > 2 && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <button
@@ -354,7 +350,6 @@ function DirectoryContent() {
         </div>
       )}
 
-      {/* Reset Action Card (only shown when filters are active) */}
       {activeFilterCount > 0 && (
         <button
           onClick={clearFilters}
@@ -369,7 +364,7 @@ function DirectoryContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24">
-      {/* Jakob's Law: Familiar Persistent Admin Top Bar */}
+      {/* Persistent Top Bar */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -386,7 +381,6 @@ function DirectoryContent() {
             </span>
           </div>
 
-          {/* Fitts's Law & Goal-Gradient: Prominent Primary CTA in top-right */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setMobileFiltersOpen(true)}
@@ -412,7 +406,7 @@ function DirectoryContent() {
         </div>
       </header>
 
-      {/* Mobile Drawer Modal (Jakob's Law) */}
+      {/* Mobile Drawer Modal */}
       {mobileFiltersOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div
@@ -434,22 +428,21 @@ function DirectoryContent() {
         </div>
       )}
 
-      {/* Main Admin Workspace Container */}
+      {/* Main Workspace Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* Left Filter Sidebar (Desktop) */}
+          {/* Left Filter Sidebar */}
           <aside className="hidden lg:block lg:col-span-3 sticky top-22">
             <SidebarPanels />
           </aside>
 
           {/* Right Main Content Canvas */}
-          <main className="lg:col-span-9 space-y-5">
+          <main className="lg:col-span-9 space-y-6">
             
-            {/* Law of Proximity: Unified Search & Sort Control Panel */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+            {/* Search & Sort Control Panel */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs">
               <div className="flex flex-col sm:flex-row gap-3">
-                {/* Search Input */}
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
@@ -469,7 +462,6 @@ function DirectoryContent() {
                   )}
                 </div>
 
-                {/* Sort Selector */}
                 <div className="relative sm:w-56">
                   <ArrowUpDown className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <select
@@ -486,19 +478,18 @@ function DirectoryContent() {
                 </div>
               </div>
 
-              {/* Active Status Bar */}
               <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span>
                     Showing <strong className="text-slate-900 font-semibold">{filteredAndSortedCourses.length}</strong> courses
                   </span>
                   {selectedProfession !== 'All' && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 font-medium border border-sky-200/60">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-sky-50 text-sky-700 font-medium border border-sky-200/60">
                       {selectedProfession}
                     </span>
                   )}
                   {selectedCategory !== 'All' && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-medium border border-slate-200">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-800 font-medium border border-slate-200">
                       {selectedCategory}
                     </span>
                   )}
@@ -515,11 +506,11 @@ function DirectoryContent() {
               </div>
             </div>
 
-            {/* Directory Results Area */}
+            {/* Spacious 2-Column Course Grid */}
             {loading ? (
               <CourseSkeletonGrid />
             ) : filteredAndSortedCourses.length === 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-2xs">
+              <div className="bg-white rounded-2xl border border-slate-200 p-14 text-center shadow-2xs">
                 <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400">
                   <Search className="w-5 h-5" />
                 </div>
@@ -537,7 +528,7 @@ function DirectoryContent() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {filteredAndSortedCourses.map((course) => {
                   const reviews = course.reviews || [];
                   const avgRating = reviews.length
@@ -548,69 +539,68 @@ function DirectoryContent() {
                     <Link
                       key={course.id}
                       href={`/course/${course.id}`}
-                      className="group bg-white rounded-xl border border-slate-200 hover:border-sky-500 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between"
+                      className="group bg-white rounded-2xl border border-slate-200 hover:border-sky-500 p-6 sm:p-7 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between min-h-[265px]"
                     >
                       <div>
-                        {/* Law of Similarity: Uniform badge heights and spacing */}
-                        <div className="flex items-center justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 shrink-0">
+                        {/* Top Row: Badges & Rating */}
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 shrink-0">
                               {course.profession || 'Dentistry'}
                             </span>
-                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 truncate">
+                            <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-sky-50 text-sky-700 truncate">
                               {course.category}
                             </span>
                           </div>
 
                           {avgRating ? (
-                            <div className="flex items-center gap-1 bg-amber-50 border border-amber-200/60 text-amber-900 px-2 py-0.5 rounded-md font-bold text-xs shrink-0">
+                            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200/70 text-amber-900 px-2.5 py-1 rounded-md font-bold text-xs shrink-0">
                               <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                               <span>{avgRating}</span>
-                              <span className="text-slate-500 font-normal text-[11px]">({reviews.length})</span>
+                              <span className="text-slate-500 font-normal">({reviews.length})</span>
                             </div>
                           ) : (
-                            <span className="text-[11px] font-medium text-slate-400 bg-slate-50 border border-slate-200/70 px-2 py-0.5 rounded-md shrink-0">
-                              No reviews
+                            <span className="text-xs font-medium text-slate-400 bg-slate-50 border border-slate-200/70 px-2.5 py-1 rounded-md shrink-0">
+                              Unreviewed
                             </span>
                           )}
                         </div>
 
-                        {/* Aesthetic-Usability: Clear typographic hierarchy */}
-                        <h2 className="font-semibold text-slate-900 text-base leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-1.5">
+                        {/* Middle Block: Generous Title & Provider Typography */}
+                        <h2 className="font-bold text-slate-900 text-lg leading-snug group-hover:text-sky-600 transition-colors line-clamp-2 mb-2.5">
                           {course.title}
                         </h2>
-                        <p className="text-xs text-slate-500 font-medium mb-4 line-clamp-1">
+                        <p className="text-sm text-slate-500 font-medium line-clamp-1">
                           {course.provider}
                           {course.instructor && ` • ${course.instructor}`}
                         </p>
                       </div>
 
-                      {/* Metadata Footer */}
-                      <div className="pt-3 border-t border-slate-100 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="inline-flex items-center gap-1.5 text-slate-700 font-semibold">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            {course.credits} Credits
-                          </span>
+                      {/* Bottom Metadata Grid: Clean 2x2 Layout with Breathing Room */}
+                      <div className="pt-5 mt-6 border-t border-slate-100 grid grid-cols-2 gap-y-3 gap-x-4 text-sm">
+                        <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                          <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span>{course.credits} Credits</span>
+                        </div>
 
-                          <span className="inline-flex items-center gap-1 text-slate-900 font-bold">
-                            <DollarSign className="w-3.5 h-3.5 text-slate-400" />
+                        <div className="flex items-center gap-1.5 justify-end text-slate-900 font-bold">
+                          <DollarSign className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span>
                             {Number(course.cost_estimate) > 0
                               ? Number(course.cost_estimate).toLocaleString()
                               : 'Free'}
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between text-[11px] text-slate-400">
-                          <span className="inline-flex items-center gap-1 truncate max-w-[155px]">
-                            <MapPin className="w-3 h-3 text-slate-300 shrink-0" />
-                            {course.location}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-slate-500 font-medium shrink-0 group-hover:text-sky-600 transition-colors">
-                            <Award className="w-3 h-3 text-sky-500" />
-                            {course.accreditation?.split(' ')[0] || 'Accredited'}
-                            <ArrowUpRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </span>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 truncate">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="truncate">{course.location}</span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 justify-end text-xs text-slate-600 font-medium group-hover:text-sky-600 transition-colors">
+                          <Award className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                          <span className="truncate">{course.accreditation?.split(' ')[0] || 'Accredited'}</span>
+                          <ArrowUpRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                         </div>
                       </div>
                     </Link>
