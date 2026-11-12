@@ -16,7 +16,8 @@ import {
   Building2,
   User,
   AlertCircle,
-  X
+  X,
+  FileCheck2
 } from 'lucide-react';
 
 interface Course {
@@ -73,6 +74,10 @@ function SubmitReviewContent() {
   const [commercialBias, setCommercialBias] = useState('Minimal / Unbiased');
   const [reviewerRole, setReviewerRole] = useState('');
   const [reviewText, setReviewText] = useState('');
+
+  // Attendance Proof Upload State
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   // Submission State
   const [submitting, setSubmitting] = useState(false);
@@ -143,15 +148,19 @@ function SubmitReviewContent() {
     }
 
     setSubmitting(true);
+    setStatusMessage('Saving your evaluation...');
 
     try {
       let targetCourseId = selectedCourse?.id;
+      let targetCourseTitle = selectedCourse?.title || newTitle.trim();
+      let targetCourseProvider = selectedCourse?.provider || newProvider.trim();
 
       // If creating a new course, insert or upsert it first
       if (mode === 'new') {
         if (!newTitle.trim() || !newProvider.trim()) {
           setErrorMsg('Course title and provider are required when adding a new course.');
           setSubmitting(false);
+          setStatusMessage(null);
           return;
         }
 
@@ -187,30 +196,67 @@ function SubmitReviewContent() {
       if (!targetCourseId) {
         setErrorMsg('Please select an existing course from the directory or switch to "Add New Course".');
         setSubmitting(false);
+        setStatusMessage(null);
         return;
       }
 
-      // Insert peer review linked to targetCourseId
-      const { error: reviewErr } = await supabase.from('reviews').insert([
-        {
-          course_id: targetCourseId,
-          overall_rating: overallRating,
-          clinical_actionability: clinicalActionability,
-          commercial_bias: commercialBias,
-          reviewer_role: reviewerRole.trim() || 'Verified Clinician',
-          review_text: reviewText.trim(),
-        },
-      ]);
+      // Insert peer review and return the newly created review row
+      const { data: createdReview, error: reviewErr } = await supabase
+        .from('reviews')
+        .insert([
+          {
+            course_id: targetCourseId,
+            overall_rating: overallRating,
+            clinical_actionability: clinicalActionability,
+            commercial_bias: commercialBias,
+            reviewer_role: reviewerRole.trim() || 'Verified Clinician',
+            review_text: reviewText.trim(),
+            verification_status: proofFile ? 'pending_manual' : 'unverified',
+          },
+        ])
+        .select()
+        .single();
 
-      if (reviewErr) {
-        throw new Error(reviewErr.message);
+      if (reviewErr || !createdReview) {
+        throw new Error(reviewErr?.message || 'Failed to save review.');
       }
 
-      // Redirect straight to the course detail page to see the live review
+      // If user attached a CE certificate or receipt, upload & run automated verification
+      if (proofFile) {
+        setStatusMessage('Uploading & verifying CE attendance proof...');
+        const fileExt = proofFile.name.split('.').pop();
+        const filePath = `${targetCourseId}/${createdReview.id}.${fileExt}`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from('ce-proofs')
+          .upload(filePath, proofFile);
+
+        if (!uploadErr) {
+          await supabase
+            .from('reviews')
+            .update({ proof_url: filePath })
+            .eq('id', createdReview.id);
+
+          // Trigger automated AI certificate check
+          await fetch('/api/verify-proof', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              reviewId: createdReview.id,
+              proofPath: filePath,
+              expectedTitle: targetCourseTitle,
+              expectedProvider: targetCourseProvider,
+            }),
+          });
+        }
+      }
+
+      // Redirect straight to the course detail page
       router.push(`/course/${targetCourseId}`);
     } catch (err: any) {
       setErrorMsg(err.message || 'Something went wrong submitting your review.');
       setSubmitting(false);
+      setStatusMessage(null);
     }
   };
 
@@ -248,7 +294,7 @@ function SubmitReviewContent() {
           </p>
         </div>
 
-        {/* Mode Switcher (Law of Similarity & Hick's Law) */}
+        {/* Mode Switcher */}
         <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-200/70 rounded-xl mb-6">
           <button
             type="button"
@@ -594,7 +640,7 @@ function SubmitReviewContent() {
             )}
           </section>
 
-          {/* STEP 2: Structured Clinical Evaluation */}
+          {/* STEP 2: Structured Clinical Evaluation & Proof Upload */}
           <section className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-2xs space-y-6">
             <div className="border-b border-slate-100 pb-4">
               <span className="text-xs font-bold uppercase tracking-wider text-sky-600">
@@ -605,7 +651,7 @@ function SubmitReviewContent() {
               </h2>
             </div>
 
-            {/* Overall Rating & Clinical Actionability (Fitts's Law: Large h-11 tap targets) */}
+            {/* Overall Rating & Clinical Actionability */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
@@ -706,6 +752,39 @@ function SubmitReviewContent() {
               />
             </div>
 
+            {/* Optional Attendance Proof Upload */}
+            <div className="p-4 sm:p-5 rounded-xl bg-slate-50 border border-dashed border-slate-300 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <FileCheck2 className="w-4 h-4 text-emerald-600" />
+                  Proof of Attendance (Optional)
+                </label>
+                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                  Earns Verified Attendee Badge
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Upload a photo or PDF of your CE certificate, AGD/ADA transcript, or registration receipt. Files are stored privately and never displayed publicly.
+              </p>
+              <div className="pt-1 flex items-center justify-between gap-3">
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                  className="block w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-lg file:text-xs file:font-semibold file:bg-white file:text-slate-700 file:border file:border-slate-200 hover:file:bg-slate-100 cursor-pointer"
+                />
+                {proofFile && (
+                  <button
+                    type="button"
+                    onClick={() => setProofFile(null)}
+                    className="text-xs font-semibold text-slate-500 hover:text-red-600 shrink-0"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Submit CTA */}
             <button
               type="submit"
@@ -713,7 +792,7 @@ function SubmitReviewContent() {
               className="w-full h-12 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-bold text-sm inline-flex items-center justify-center gap-2 transition-colors shadow-xs"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{submitting ? 'Publishing Evaluation...' : 'Publish Verified Review'}</span>
+              <span>{submitting ? statusMessage || 'Publishing Evaluation...' : 'Publish Evaluation'}</span>
             </button>
           </section>
         </form>
