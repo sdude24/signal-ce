@@ -40,10 +40,9 @@ export default function SubmitReviewPage() {
   const [clinicalActionability, setClinicalActionability] = useState<number>(5);
   const [commercialBias, setCommercialBias] = useState<number>(5);
 
-  // Written review & reviewer details
+  // Written review & reviewer role
   const [takeaways, setTakeaways] = useState('');
   const [reviewerRole, setReviewerRole] = useState('General Dentist (DDS/DMD)');
-  const [practiceYears, setPracticeYears] = useState('1–5 years');
 
   // Optional proof of attendance upload
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -145,7 +144,6 @@ export default function SubmitReviewPage() {
         commercial_bias: Number(commercialBias),
         takeaways: takeaways.trim(),
         reviewer_role: reviewerRole,
-        practice_years: practiceYears,
         verified_attendee: isVerified,
         verification_notes: verificationSummary,
       });
@@ -357,39 +355,21 @@ export default function SubmitReviewPage() {
               />
             </div>
 
-            {/* Clinician Background */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Your Clinical Role
-                </label>
-                <select
-                  value={reviewerRole}
-                  onChange={(e) => setReviewerRole(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
-                >
-                  <option value="General Dentist (DDS/DMD)">General Dentist (DDS/DMD)</option>
-                  <option value="Dental Specialist">Dental Specialist</option>
-                  <option value="Dental Resident / Student">Dental Resident / Student</option>
-                  <option value="Dental Hygienist (RDH)">Dental Hygienist (RDH)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Experience Level
-                </label>
-                <select
-                  value={practiceYears}
-                  onChange={(e) => setPracticeYears(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
-                >
-                  <option value="Student / Resident">Student / Resident</option>
-                  <option value="1–5 years">1–5 years</option>
-                  <option value="6–15 years">6–15 years</option>
-                  <option value="15+ years">15+ years</option>
-                </select>
-              </div>
+            {/* Clinician Role */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Your Clinical Role
+              </label>
+              <select
+                value={reviewerRole}
+                onChange={(e) => setReviewerRole(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
+              >
+                <option value="General Dentist (DDS/DMD)">General Dentist (DDS/DMD)</option>
+                <option value="Dental Specialist">Dental Specialist</option>
+                <option value="Dental Resident / Student">Dental Resident / Student</option>
+                <option value="Dental Hygienist (RDH)">Dental Hygienist (RDH)</option>
+              </select>
             </div>
 
             {/* Optional Proof of Attendance Upload */}
