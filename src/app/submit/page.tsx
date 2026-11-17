@@ -3,32 +3,49 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle2, FileCheck2, Loader2, Search, ShieldCheck, Upload } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  FileCheck2,
+  Loader2,
+  Search,
+  ShieldCheck,
+  Upload,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface CourseOption {
   id: string;
   title: string;
-  provider: string;
+  provider?: string | null;
   speaker?: string | null;
   ce_credits?: number | null;
+  credits?: number | null;
+  specialty?: string | null;
 }
 
 export default function SubmitReviewPage() {
   const router = useRouter();
+
+  // Course search & selection state
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCourse, setSelectedCourse] = useState<CourseOption | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
 
+  // Review rating fields (1-5 integers)
   const [overallRating, setOverallRating] = useState<number>(5);
   const [clinicalActionability, setClinicalActionability] = useState<number>(5);
   const [commercialBias, setCommercialBias] = useState<number>(5);
+
+  // Written review & reviewer details
   const [takeaways, setTakeaways] = useState('');
   const [reviewerRole, setReviewerRole] = useState('General Dentist (DDS/DMD)');
   const [practiceYears, setPracticeYears] = useState('1–5 years');
 
+  // Optional proof of attendance upload
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -38,20 +55,30 @@ export default function SubmitReviewPage() {
     async function loadCourses() {
       const { data, error } = await supabase
         .from('courses')
-        .select('id, title, provider, speaker, ce_credits')
+        .select('*')
         .order('title', { ascending: true });
 
-      if (!error && data) {
+      if (error) {
+        setLoadError(error.message);
+      } else if (data) {
         setCourses(data);
-        const preselectedId = new URLSearchParams(window.location.search).get('courseId');
-        const match = preselectedId ? data.find((c) => c.id === preselectedId) : null;
-        if (match) {
-          setSelectedCourse(match);
-          setSearchQuery(match.title);
+
+        // Pre-select course if ?courseId=... is in the URL
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          const preselectedId = params.get('courseId');
+          if (preselectedId) {
+            const match = data.find((c) => c.id === preselectedId);
+            if (match) {
+              setSelectedCourse(match);
+              setSearchQuery(match.title);
+            }
+          }
         }
       }
       setLoadingCourses(false);
     }
+
     loadCourses();
   }, []);
 
@@ -61,8 +88,8 @@ export default function SubmitReviewPage() {
     return courses
       .filter(
         (c) =>
-          c.title.toLowerCase().includes(q) ||
-          c.provider.toLowerCase().includes(q) ||
+          (c.title && c.title.toLowerCase().includes(q)) ||
+          (c.provider && c.provider.toLowerCase().includes(q)) ||
           (c.speaker && c.speaker.toLowerCase().includes(q))
       )
       .slice(0, 10);
@@ -73,22 +100,35 @@ export default function SubmitReviewPage() {
     setErrorMessage(null);
     setStatusMessage(null);
 
-    if (!selectedCourse) return setErrorMessage('Please search and select a course from the dropdown first.');
-    if (!takeaways.trim()) return setErrorMessage('Please share at least a brief clinical takeaway.');
+    if (!selectedCourse) {
+      setErrorMessage('Please search and select a course from the dropdown first.');
+      return;
+    }
+
+    if (!takeaways.trim()) {
+      setErrorMessage('Please share at least a brief clinical takeaway.');
+      return;
+    }
 
     setSubmitting(true);
+
     try {
       let isVerified = false;
       let verificationSummary: string | null = null;
 
+      // Optional AI certificate verification
       if (proofFile) {
         setStatusMessage('Auditing attendance certificate with AI...');
         const formData = new FormData();
         formData.append('file', proofFile);
         formData.append('courseTitle', selectedCourse.title);
-        formData.append('provider', selectedCourse.provider);
+        formData.append('provider', selectedCourse.provider || '');
 
-        const verifyRes = await fetch('/api/verify-proof', { method: 'POST', body: formData });
+        const verifyRes = await fetch('/api/verify-proof', {
+          method: 'POST',
+          body: formData,
+        });
+
         if (verifyRes.ok) {
           const verifyJson = await verifyRes.json();
           isVerified = Boolean(verifyJson.verified);
@@ -97,6 +137,7 @@ export default function SubmitReviewPage() {
       }
 
       setStatusMessage('Publishing peer review...');
+
       const { error: insertError } = await supabase.from('reviews').insert({
         course_id: selectedCourse.id,
         overall_rating: Number(overallRating),
@@ -109,10 +150,15 @@ export default function SubmitReviewPage() {
         verification_notes: verificationSummary,
       });
 
-      if (insertError) throw new Error(insertError.message);
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
       router.push(`/course/${selectedCourse.id}`);
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong while publishing your review.');
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong while publishing your review.';
+      setErrorMessage(message);
       setStatusMessage(null);
       setSubmitting(false);
     }
@@ -121,7 +167,10 @@ export default function SubmitReviewPage() {
   return (
     <main className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6">
       <div className="max-w-3xl mx-auto">
-        <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 mb-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 mb-6"
+        >
           <ArrowLeft className="w-4 h-4" />
           Back to Course Catalog
         </Link>
@@ -135,7 +184,9 @@ export default function SubmitReviewPage() {
           </div>
 
           {errorMessage && (
-            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div>
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {errorMessage}
+            </div>
           )}
 
           {statusMessage && (
@@ -146,9 +197,11 @@ export default function SubmitReviewPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Course Autocomplete */}
+            {/* Course Autocomplete Search */}
             <div className="relative">
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Select Continuing Education Course *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Select Continuing Education Course *
+              </label>
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -160,7 +213,11 @@ export default function SubmitReviewPage() {
                     setSelectedCourse(null);
                     setShowDropdown(true);
                   }}
-                  placeholder={loadingCourses ? 'Loading course catalog...' : 'Search by course title, provider, or speaker...'}
+                  placeholder={
+                    loadingCourses
+                      ? 'Loading course catalog...'
+                      : 'Search by course title, provider, or speaker...'
+                  }
                   className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
                 />
               </div>
@@ -169,7 +226,10 @@ export default function SubmitReviewPage() {
                 <div className="mt-2 flex items-center justify-between rounded-lg border border-teal-200 bg-teal-50/70 px-3.5 py-2 text-xs text-teal-900">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
-                    <span><strong>{selectedCourse.title}</strong> ({selectedCourse.provider})</span>
+                    <span>
+                      <strong>{selectedCourse.title}</strong>
+                      {selectedCourse.provider ? ` (${selectedCourse.provider})` : ''}
+                    </span>
                   </div>
                   <button
                     type="button"
@@ -187,37 +247,54 @@ export default function SubmitReviewPage() {
 
               {showDropdown && !selectedCourse && (
                 <div className="absolute z-20 mt-1.5 w-full max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg divide-y divide-slate-100">
-                  {filteredCourses.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-slate-500">No matching courses found. Try another keyword.</div>
+                  {loadingCourses ? (
+                    <div className="px-4 py-3 text-sm text-slate-500">
+                      Loading courses...
+                    </div>
+                  ) : loadError ? (
+                    <div className="px-4 py-3 text-sm text-red-600">
+                      Error loading courses: {loadError}
+                    </div>
+                  ) : filteredCourses.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-slate-500">
+                      No matching courses found. Try another keyword.
+                    </div>
                   ) : (
-                    filteredCourses.map((course) => (
-                      <button
-                        key={course.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCourse(course);
-                          setSearchQuery(course.title);
-                          setShowDropdown(false);
-                        }}
-                        className="w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="text-sm font-medium text-slate-900 line-clamp-1">{course.title}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          {course.provider}
-                          {course.speaker ? ` • ${course.speaker}` : ''}
-                          {course.ce_credits ? ` • ${course.ce_credits} CE` : ''}
-                        </div>
-                      </button>
-                    ))
+                    filteredCourses.map((course) => {
+                      const creditCount = course.ce_credits ?? course.credits;
+                      return (
+                        <button
+                          key={course.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCourse(course);
+                            setSearchQuery(course.title);
+                            setShowDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="text-sm font-medium text-slate-900 line-clamp-1">
+                            {course.title}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            {course.provider || 'CE Provider'}
+                            {course.speaker ? ` • ${course.speaker}` : ''}
+                            {creditCount ? ` • ${creditCount} CE` : ''}
+                          </div>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
               )}
             </div>
 
-            {/* 1-5 Integer Ratings */}
+            {/* 1-5 Integer Rating Dropdowns */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Overall Quality (1–5)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Overall Quality (1–5)
+                </label>
                 <select
                   value={overallRating}
                   onChange={(e) => setOverallRating(Number(e.target.value))}
@@ -232,7 +309,9 @@ export default function SubmitReviewPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Clinical Actionability (1–5)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Clinical Actionability (1–5)
+                </label>
                 <select
                   value={clinicalActionability}
                   onChange={(e) => setClinicalActionability(Number(e.target.value))}
@@ -247,7 +326,9 @@ export default function SubmitReviewPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Vendor Bias (1–5)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Vendor Bias (1–5)
+                </label>
                 <select
                   value={commercialBias}
                   onChange={(e) => setCommercialBias(Number(e.target.value))}
@@ -262,9 +343,11 @@ export default function SubmitReviewPage() {
               </div>
             </div>
 
-            {/* Takeaways */}
+            {/* Clinical Takeaways */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Clinical Takeaways &amp; Honest Critique *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Clinical Takeaways &amp; Honest Critique *
+              </label>
               <textarea
                 rows={4}
                 value={takeaways}
@@ -274,10 +357,12 @@ export default function SubmitReviewPage() {
               />
             </div>
 
-            {/* Clinician Details */}
+            {/* Clinician Background */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Your Clinical Role</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Your Clinical Role
+                </label>
                 <select
                   value={reviewerRole}
                   onChange={(e) => setReviewerRole(e.target.value)}
@@ -291,7 +376,9 @@ export default function SubmitReviewPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Experience Level</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Experience Level
+                </label>
                 <select
                   value={practiceYears}
                   onChange={(e) => setPracticeYears(e.target.value)}
@@ -305,15 +392,20 @@ export default function SubmitReviewPage() {
               </div>
             </div>
 
-            {/* Proof of Attendance */}
+            {/* Optional Proof of Attendance Upload */}
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 p-4">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-slate-900">Optional: Earn a Verified Attendee Badge</div>
+                  <div className="text-sm font-medium text-slate-900">
+                    Optional: Earn a Verified Attendee Badge
+                  </div>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    Upload a screenshot or PDF of your CE completion certificate. Our AI confirms course attendance and immediately discards your file—your license number is never stored or displayed.
+                    Upload a screenshot or PDF of your CE completion certificate. Our AI confirms
+                    course attendance and immediately discards your file—your license number is never
+                    stored or displayed.
                   </p>
+
                   <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
                     {proofFile ? (
                       <>
@@ -326,7 +418,12 @@ export default function SubmitReviewPage() {
                         <span>Attach Certificate (PNG, JPG, PDF)</span>
                       </>
                     )}
-                    <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => setProofFile(e.target.files?.[0] || null)} />
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="hidden"
+                      onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                    />
                   </label>
                 </div>
               </div>
