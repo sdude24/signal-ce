@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -49,7 +49,7 @@ interface Review {
   created_at?: string | null;
 }
 
-export default function CourseDetailPage() {
+function CourseDetailContent() {
   const params = useParams();
   const courseId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -364,5 +364,22 @@ export default function CourseDetailPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function CourseDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="flex items-center gap-2.5 text-sm font-medium text-slate-600">
+            <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
+            <span>Loading course details...</span>
+          </div>
+        </main>
+      }
+    >
+      <CourseDetailContent />
+    </Suspense>
   );
 }
