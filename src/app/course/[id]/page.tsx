@@ -1,403 +1,368 @@
 'use client';
 
-import { useEffect, useState, use, Suspense } from 'react';
-import { supabase } from '@/lib/supabase';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Star, MapPin, Award, Clock, DollarSign, CheckCircle2, ShieldAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  Award,
+  Calendar,
+  ExternalLink,
+  Loader2,
+  MapPin,
+  MessageSquarePlus,
+  ShieldCheck,
+  Sparkles,
+  User,
+} from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Course {
   id: string;
   title: string;
-  provider: string;
-  instructor: string | null;
-  category: string;
-  format: string;
-  credits: number;
-  cost_estimate: number;
-  location: string;
-  accreditation: string;
-  website_url: string | null;
+  provider?: string | null;
+  speaker?: string | null;
+  ce_credits?: number | null;
+  credits?: number | null;
+  specialty?: string | null;
+  format?: string | null;
+  location?: string | null;
+  date?: string | null;
+  start_date?: string | null;
+  price?: number | string | null;
+  url?: string | null;
+  description?: string | null;
 }
 
 interface Review {
   id: string;
-  reviewer_role: string;
-  years_in_practice: string;
-  overall_rating: number;
-  clinical_utility: number;
-  commercial_bias: number;
-  hands_on_quality: number;
-  value_for_money: number;
-  headline: string;
-  body: string;
-  would_recommend: boolean;
-  created_at: string;
+  course_id: string;
+  overall_rating?: number | null;
+  clinical_actionability?: number | null;
+  commercial_bias?: number | null;
+  utility_rating?: number | null;
+  takeaways?: string | null;
+  body?: string | null;
+  headline?: string | null;
+  reviewer_role?: string | null;
+  verified_attendee?: boolean | null;
+  created_at?: string | null;
 }
 
-function CourseContent({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function CourseDetailPage() {
+  const params = useParams();
+  const courseId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+
   const [course, setCourse] = useState<Course | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // New review form state
-  const [showForm, setShowForm] = useState(false);
-  const [role, setRole] = useState('General Dentist');
-  const [years, setYears] = useState('< 2 Years');
-  const [overallRating, setOverallRating] = useState(5);
-  const [utility, setUtility] = useState(5);
-  const [commercialBias, setCommercialBias] = useState(1);
-  const [handsOn, setHandsOn] = useState(5);
-  const [value, setValue] = useState(5);
-  const [headline, setHeadline] = useState('');
-  const [body, setBody] = useState('');
-  const [recommend, setRecommend] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!courseId) return;
+
     async function fetchCourseAndReviews() {
       setLoading(true);
+      setErrorMessage(null);
+
       const [courseRes, reviewsRes] = await Promise.all([
-        supabase.from('courses').select('*').eq('id', id).single(),
-        supabase.from('reviews').select('*').eq('course_id', id).order('created_at', { ascending: false }),
+        supabase.from('courses').select('*').eq('id', courseId).single(),
+        supabase
+          .from('reviews')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('created_at', { ascending: false }),
       ]);
 
-      if (courseRes.data) setCourse(courseRes.data);
-      if (reviewsRes.data) setReviews(reviewsRes.data);
+      if (courseRes.error) {
+        setErrorMessage(courseRes.error.message);
+      } else {
+        setCourse(courseRes.data);
+      }
+
+      if (!reviewsRes.error && reviewsRes.data) {
+        setReviews(reviewsRes.data);
+      }
+
       setLoading(false);
     }
 
     fetchCourseAndReviews();
-  }, [id]);
+  }, [courseId]);
 
-  const handleSubmitReview = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
+  const metrics = useMemo(() => {
+    const validOverall = reviews
+      .map((r) => r.overall_rating ?? r.utility_rating)
+      .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
 
-    const { data, error } = await supabase
-      .from('reviews')
-      .insert([
-        {
-          course_id: id,
-          reviewer_role: role,
-          years_in_practice: years,
-          overall_rating: overallRating,
-          clinical_utility: utility,
-          commercial_bias: commercialBias,
-          hands_on_quality: handsOn,
-          value_for_money: value,
-          headline,
-          body,
-          would_recommend: recommend,
-        },
-      ])
-      .select();
+    const validActionability = reviews
+      .map((r) => r.clinical_actionability)
+      .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
 
-    if (!error && data) {
-      setReviews([data[0], ...reviews]);
-      setShowForm(false);
-      setHeadline('');
-      setBody('');
-    }
-    setSubmitting(false);
-  };
+    const validBias = reviews
+      .map((r) => r.commercial_bias)
+      .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
+
+    const avg = (arr: number[]) =>
+      arr.length ? (arr.reduce((sum, n) => sum + n, 0) / arr.length).toFixed(1) : null;
+
+    return {
+      overall: avg(validOverall),
+      actionability: avg(validActionability),
+      bias: avg(validBias),
+      verifiedCount: reviews.filter((r) => Boolean(r.verified_attendee)).length,
+    };
+  }, [reviews]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-sky-600 border-t-transparent rounded-full animate-spin" />
-      </div>
+      <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="flex items-center gap-2.5 text-sm font-medium text-slate-600">
+          <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
+          <span>Loading course details...</span>
+        </div>
+      </main>
     );
   }
 
-  if (!course) {
+  if (errorMessage || !course) {
     return (
-      <div className="min-h-screen bg-slate-50 p-12 text-center">
-        <p className="text-slate-600">Course not found.</p>
-        <Link href="/" className="text-sky-600 font-semibold underline mt-4 inline-block">
-          ← Return to Directory
-        </Link>
-      </div>
+      <main className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6">
+        <div className="max-w-3xl mx-auto">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 mb-6"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Course Catalog
+          </Link>
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+            {errorMessage || 'Course not found.'}
+          </div>
+        </div>
+      </main>
     );
   }
 
-  const avgRating = reviews.length
-    ? (reviews.reduce((acc, r) => acc + Number(r.overall_rating), 0) / reviews.length).toFixed(1)
-    : 'New';
+  const creditCount = course.ce_credits ?? course.credits;
+  const courseDate = course.start_date || course.date;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24">
-      {/* Top Bar */}
-      <nav className="bg-white border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="text-sm font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5">
-            <ArrowLeft className="w-4 h-4" /> Back to Directory
-          </Link>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
-          >
-            {showForm ? 'Close Form' : '+ Write a Review'}
-          </button>
-        </div>
-      </nav>
+    <main className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Course Catalog
+        </Link>
 
-      <main className="max-w-5xl mx-auto px-6 pt-10">
-        {/* Course Overview Card */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 mb-8 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <span className="text-xs font-bold uppercase tracking-wider text-sky-700 bg-sky-100 px-3 py-1 rounded-full">
-              {course.category}
-            </span>
-            <div className="flex items-center gap-1.5 bg-amber-50 text-amber-800 px-3 py-1 rounded-lg font-bold text-sm">
-              <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-              <span>{avgRating}</span>
-              <span className="text-slate-400 font-normal">({reviews.length} reviews)</span>
-            </div>
+        {/* Course Header Card */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {course.provider && (
+              <span className="inline-flex items-center rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 border border-teal-200">
+                {course.provider}
+              </span>
+            )}
+            {course.specialty && (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                {course.specialty}
+              </span>
+            )}
+            {creditCount && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 border border-amber-200">
+                <Award className="w-3.5 h-3.5" />
+                {creditCount} CE Credits
+              </span>
+            )}
           </div>
 
-          <h1 className="text-3xl font-extrabold text-slate-900 mb-2">{course.title}</h1>
-          <p className="text-base text-slate-600 font-medium mb-6">
-            Presented by <span className="text-slate-900">{course.provider}</span> {course.instructor && `• Instructor: ${course.instructor}`}
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">{course.title}</h1>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-4 border-y border-slate-100 text-sm">
-            <div>
-              <div className="text-xs text-slate-400 font-medium flex items-center gap-1 mb-1">
-                <Clock className="w-3.5 h-3.5" /> Credit Hours
+          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
+            {course.speaker && (
+              <div className="flex items-center gap-1.5">
+                <User className="w-4 h-4 text-slate-400" />
+                <span>{course.speaker}</span>
               </div>
-              <p className="font-semibold text-slate-800">{course.credits} CE Credits</p>
-              <p className="text-xs text-slate-500">{course.format}</p>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 font-medium flex items-center gap-1 mb-1">
-                <DollarSign className="w-3.5 h-3.5" /> Tuition
+            )}
+            {courseDate && (
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                <span>{courseDate}</span>
               </div>
-              <p className="font-semibold text-slate-800">${course.cost_estimate.toLocaleString()}</p>
-              <p className="text-xs text-slate-500">Estimated</p>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 font-medium flex items-center gap-1 mb-1">
-                <MapPin className="w-3.5 h-3.5" /> Location
+            )}
+            {(course.location || course.format) && (
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-slate-400" />
+                <span>{course.location || course.format}</span>
               </div>
-              <p className="font-semibold text-slate-800">{course.location}</p>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 font-medium flex items-center gap-1 mb-1">
-                <Award className="w-3.5 h-3.5" /> Provider Status
-              </div>
-              <p className="font-semibold text-slate-800">{course.accreditation}</p>
-            </div>
+            )}
           </div>
 
-          {course.website_url && (
-            <div className="mt-6 flex justify-end">
-              <a
-                href={course.website_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-semibold text-sky-600 hover:text-sky-700 underline"
-              >
-                Visit Official Course Registration Page →
-              </a>
-            </div>
+          {course.description && (
+            <p className="mt-4 text-sm text-slate-600 leading-relaxed">{course.description}</p>
           )}
+
+          {/* Aggregated Peer Metrics */}
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-slate-100">
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4">
+              <div className="text-xs font-medium text-slate-500">Overall Quality</div>
+              <div className="mt-1 text-2xl font-bold text-slate-900">
+                {metrics.overall ? `${metrics.overall} / 5` : '—'}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4">
+              <div className="text-xs font-medium text-slate-500">Clinical Actionability</div>
+              <div className="mt-1 text-2xl font-bold text-slate-900">
+                {metrics.actionability ? `${metrics.actionability} / 5` : '—'}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">Chairside applicability</div>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4">
+              <div className="text-xs font-medium text-slate-500">Vendor Bias Score</div>
+              <div className="mt-1 text-2xl font-bold text-slate-900">
+                {metrics.bias ? `${metrics.bias} / 5` : '—'}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">5 = completely unbiased</div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <Link
+              href={`/submit?courseId=${course.id}`}
+              className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 transition-colors"
+            >
+              <MessageSquarePlus className="w-4 h-4" />
+              Write a Peer Review
+            </Link>
+
+            {course.url && (
+              <a
+                href={course.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <span>Course Website</span>
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+          </div>
         </div>
 
-        {/* Review Submission Drawer */}
-        {showForm && (
-          <form onSubmit={handleSubmitReview} className="bg-white border-2 border-sky-500 rounded-2xl p-8 mb-10 shadow-sm space-y-6">
-            <h2 className="text-xl font-bold text-slate-900">Add Your Clinical Evaluation</h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Your Role</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"
-                >
-                  <option>General Dentist</option>
-                  <option>Specialist</option>
-                  <option>Dental Resident</option>
-                  <option>Dental Student (D3/D4)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Experience Level</label>
-                <select
-                  value={years}
-                  onChange={(e) => setYears(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm bg-white"
-                >
-                  <option>&lt; 2 Years</option>
-                  <option>2–5 Years</option>
-                  <option>5–10 Years</option>
-                  <option>10+ Years</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Granular Ratings */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Overall (1-5)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={overallRating}
-                  onChange={(e) => setOverallRating(Number(e.target.value))}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Monday Clinical Utility</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={utility}
-                  onChange={(e) => setUtility(Number(e.target.value))}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Commercial Pitch (1=Low)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={commercialBias}
-                  onChange={(e) => setCommercialBias(Number(e.target.value))}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Hands-On Quality</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={handsOn}
-                  onChange={(e) => setHandsOn(Number(e.target.value))}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                  required
-                />
-              </div>
-            </div>
-
+        {/* Peer Reviews & Evaluations Section */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Headline Summary</label>
-              <input
-                type="text"
-                placeholder="e.g. Great anterior composite tips, high sales pressure on armamentarium"
-                value={headline}
-                onChange={(e) => setHeadline(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                required
-              />
+              <h2 className="text-xl font-bold text-slate-900">Peer Reviews &amp; Evaluations</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {metrics.verifiedCount > 0
+                  ? `${metrics.verifiedCount} verified attendee ${
+                      metrics.verifiedCount === 1 ? 'review' : 'reviews'
+                    }`
+                  : 'Independent clinical feedback from fellow practitioners'}
+              </p>
             </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Detailed Clinical Feedback</label>
-              <textarea
-                rows={4}
-                placeholder="Break down what you learned, instructor pacing, and whether the protocols translate directly to your practice."
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                required
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="rec"
-                checked={recommend}
-                onChange={(e) => setRecommend(e.target.checked)}
-                className="rounded text-sky-600 focus:ring-sky-500 h-4 w-4"
-              />
-              <label htmlFor="rec" className="text-xs font-medium text-slate-700">
-                I would recommend this CE course to a colleague.
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {submitting ? 'Submitting Review...' : 'Publish Anonymous Peer Review'}
-            </button>
-          </form>
-        )}
-
-        {/* Reviews List */}
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Peer Reviews & Evaluations ({reviews.length})</h2>
+          </div>
 
           {reviews.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">
-              No clinician reviews published yet. Be the first to share your evaluation!
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-center">
+              <Sparkles className="w-6 h-6 text-teal-600 mx-auto mb-2" />
+              <div className="text-sm font-semibold text-slate-900">No peer evaluations yet</div>
+              <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto">
+                Taken this course? Share whether the clinical pearls matched the marketing and earn a
+                Verified Attendee badge.
+              </p>
+              <Link
+                href={`/submit?courseId=${course.id}`}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700"
+              >
+                Submit the First Review
+              </Link>
             </div>
           ) : (
             <div className="space-y-4">
-              {reviews.map((rev) => (
-                <div key={rev.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                        <Star className="w-3.5 h-3.5 fill-current mr-1" />
-                        {rev.overall_rating}
-                      </span>
-                      <span className="text-xs font-bold text-slate-700">{rev.reviewer_role}</span>
-                      <span className="text-xs text-slate-400">({rev.years_in_practice} experience)</span>
+              {reviews.map((review) => {
+                const overall = review.overall_rating ?? review.utility_rating;
+                const reviewText = review.takeaways || review.body;
+                const formattedDate = review.created_at
+                  ? new Date(review.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })
+                  : null;
+
+                return (
+                  <div
+                    key={review.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 space-y-3"
+                  >
+                    {/* Reviewer Role + Verified Attendee Badge */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">
+                          {review.reviewer_role || 'General Dentist (DDS/DMD)'}
+                        </span>
+
+                        {review.verified_attendee && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            Verified Attendee
+                          </span>
+                        )}
+                      </div>
+
+                      {formattedDate && (
+                        <span className="text-xs text-slate-400">{formattedDate}</span>
+                      )}
                     </div>
-                    {rev.would_recommend ? (
-                      <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Recommends
-                      </span>
-                    ) : (
-                      <span className="text-xs font-semibold text-rose-500 flex items-center gap-1">
-                        <ShieldAlert className="w-3.5 h-3.5" /> Does Not Recommend
-                      </span>
+
+                    {/* Standardized 1-5 Metrics Pills */}
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {typeof overall === 'number' && (
+                        <span className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 font-medium text-slate-700">
+                          Overall Quality: <strong className="text-slate-900">{overall}/5</strong>
+                        </span>
+                      )}
+                      {typeof review.clinical_actionability === 'number' && (
+                        <span className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 font-medium text-slate-700">
+                          Clinical Actionability:{' '}
+                          <strong className="text-slate-900">
+                            {review.clinical_actionability}/5
+                          </strong>
+                        </span>
+                      )}
+                      {typeof review.commercial_bias === 'number' && (
+                        <span className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 font-medium text-slate-700">
+                          Vendor Bias:{' '}
+                          <strong className="text-slate-900">{review.commercial_bias}/5</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Review Takeaways */}
+                    {reviewText && (
+                      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                        {reviewText}
+                      </p>
                     )}
                   </div>
-
-                  <h3 className="font-bold text-slate-900 text-base mb-1">{rev.headline}</h3>
-                  <p className="text-sm text-slate-600 leading-relaxed mb-4">{rev.body}</p>
-
-                  <div className="flex flex-wrap gap-4 pt-3 border-t border-slate-100 text-xs text-slate-500">
-                    <div>Utility: <span className="font-semibold text-slate-800">{rev.clinical_utility}/5</span></div>
-                    <div>Commercial Bias: <span className="font-semibold text-slate-800">{rev.commercial_bias}/5</span></div>
-                    <div>Hands-On: <span className="font-semibold text-slate-800">{rev.hands_on_quality}/5</span></div>
-                    <div>Value: <span className="font-semibold text-slate-800">{rev.value_for_money}/5</span></div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
-      </main>
-    </div>
-  );
-}
-
-export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-          <div className="w-8 h-8 border-4 border-sky-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
-      <CourseContent params={params} />
-    </Suspense>
+      </div>
+    </main>
   );
 }
