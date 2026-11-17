@@ -1,23 +1,20 @@
 'use client';
 
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  Award,
-  Calendar,
-  ExternalLink,
+  CheckCircle2,
+  FileCheck2,
   Loader2,
-  MapPin,
-  MessageSquarePlus,
+  Search,
   ShieldCheck,
-  Sparkles,
-  User,
+  Upload,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-interface Course {
+interface CourseOption {
   id: string;
   title: string;
   provider?: string | null;
@@ -25,361 +22,438 @@ interface Course {
   ce_credits?: number | null;
   credits?: number | null;
   specialty?: string | null;
-  format?: string | null;
-  location?: string | null;
-  date?: string | null;
-  start_date?: string | null;
-  price?: number | string | null;
-  url?: string | null;
-  description?: string | null;
 }
 
-interface Review {
-  id: string;
-  course_id: string;
-  overall_rating?: number | null;
-  clinical_actionability?: number | null;
-  commercial_bias?: number | null;
-  utility_rating?: number | null;
-  takeaways?: string | null;
-  body?: string | null;
-  headline?: string | null;
-  reviewer_role?: string | null;
-  verified_attendee?: boolean | null;
-  created_at?: string | null;
-}
+function SubmitReviewContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectedId = searchParams.get('courseId');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-function CourseDetailContent() {
-  const params = useParams();
-  const courseId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+  // Course search & selection state
+  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCourse, setSelectedCourse] = useState<CourseOption | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
 
-  const [course, setCourse] = useState<Course | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Review rating fields (1-5 integers)
+  const [overallRating, setOverallRating] = useState<number>(5);
+  const [clinicalActionability, setClinicalActionability] = useState<number>(5);
+  const [commercialBias, setCommercialBias] = useState<number>(5);
+
+  // Written review & reviewer role
+  const [takeaways, setTakeaways] = useState('');
+  const [reviewerRole, setReviewerRole] = useState('General Dentist (DDS/DMD)');
+
+  // Optional proof of attendance upload
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  function resetForm(keepCourse?: CourseOption | null) {
+    setSelectedCourse(keepCourse ?? null);
+    setSearchQuery(keepCourse ? keepCourse.title : '');
+    setShowDropdown(false);
+    setOverallRating(5);
+    setClinicalActionability(5);
+    setCommercialBias(5);
+    setTakeaways('');
+    setProofFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setSubmitting(false);
+  }
+
   useEffect(() => {
-    if (!courseId) return;
+    async function loadCourses() {
+      const { data, error } = await supabase
+        .from('courses')
+        .select('*')
+        .order('title', { ascending: true });
 
-    async function fetchCourseAndReviews() {
-      setLoading(true);
-      setErrorMessage(null);
-
-      const [courseRes, reviewsRes] = await Promise.all([
-        supabase.from('courses').select('*').eq('id', courseId).single(),
-        supabase
-          .from('reviews')
-          .select('*')
-          .eq('course_id', courseId)
-          .order('created_at', { ascending: false }),
-      ]);
-
-      if (courseRes.error) {
-        setErrorMessage(courseRes.error.message);
-      } else {
-        setCourse(courseRes.data);
+      if (error) {
+        setLoadError(error.message);
+      } else if (data) {
+        setCourses(data);
+        if (preselectedId) {
+          const match = data.find((c) => c.id === preselectedId) || null;
+          resetForm(match);
+        } else {
+          resetForm(null);
+        }
       }
-
-      if (!reviewsRes.error && reviewsRes.data) {
-        setReviews(reviewsRes.data);
-      }
-
-      setLoading(false);
+      setLoadingCourses(false);
     }
 
-    fetchCourseAndReviews();
-  }, [courseId]);
+    loadCourses();
+  }, [preselectedId]);
 
-  const metrics = useMemo(() => {
-    const validOverall = reviews
-      .map((r) => r.overall_rating ?? r.utility_rating)
-      .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
+  const filteredCourses = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return courses.slice(0, 8);
+    return courses
+      .filter(
+        (c) =>
+          (c.title && c.title.toLowerCase().includes(q)) ||
+          (c.provider && c.provider.toLowerCase().includes(q)) ||
+          (c.speaker && c.speaker.toLowerCase().includes(q))
+      )
+      .slice(0, 10);
+  }, [courses, searchQuery]);
 
-    const validActionability = reviews
-      .map((r) => r.clinical_actionability)
-      .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMessage(null);
+    setStatusMessage(null);
 
-    const validBias = reviews
-      .map((r) => r.commercial_bias)
-      .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
+    if (!selectedCourse) {
+      setErrorMessage('Please search and select a course from the dropdown first.');
+      return;
+    }
 
-    const avg = (arr: number[]) =>
-      arr.length ? (arr.reduce((sum, n) => sum + n, 0) / arr.length).toFixed(1) : null;
+    if (!takeaways.trim()) {
+      setErrorMessage('Please share at least a brief clinical takeaway.');
+      return;
+    }
 
-    return {
-      overall: avg(validOverall),
-      actionability: avg(validActionability),
-      bias: avg(validBias),
-      verifiedCount: reviews.filter((r) => Boolean(r.verified_attendee)).length,
-    };
-  }, [reviews]);
+    setSubmitting(true);
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="flex items-center gap-2.5 text-sm font-medium text-slate-600">
-          <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
-          <span>Loading course details...</span>
-        </div>
-      </main>
-    );
+    try {
+      let isVerified = false;
+      let verificationSummary: string | null = null;
+
+      // Optional AI certificate verification
+      if (proofFile) {
+        setStatusMessage('Auditing attendance certificate with AI...');
+        const formData = new FormData();
+        formData.append('file', proofFile);
+        formData.append('courseTitle', selectedCourse.title);
+        formData.append('provider', selectedCourse.provider || '');
+
+        const verifyRes = await fetch('/api/verify-proof', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (verifyRes.ok) {
+          const verifyJson = await verifyRes.json();
+          isVerified = Boolean(verifyJson.verified);
+          verificationSummary = verifyJson.reason || null;
+        }
+      }
+
+      setStatusMessage('Publishing peer review...');
+
+      const targetCourseId = selectedCourse.id;
+
+      const { error: insertError } = await supabase.from('reviews').insert({
+        course_id: targetCourseId,
+        overall_rating: Number(overallRating),
+        clinical_actionability: Number(clinicalActionability),
+        commercial_bias: Number(commercialBias),
+        takeaways: takeaways.trim(),
+        reviewer_role: reviewerRole,
+        verified_attendee: isVerified,
+        verification_notes: verificationSummary,
+      });
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      // Clear all form fields before redirecting so returning to /submit starts fresh
+      resetForm(null);
+      router.push(`/course/${targetCourseId}`);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong while publishing your review.';
+      setErrorMessage(message);
+      setStatusMessage(null);
+      setSubmitting(false);
+    }
   }
-
-  if (errorMessage || !course) {
-    return (
-      <main className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6">
-        <div className="max-w-3xl mx-auto">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 mb-6"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Course Catalog
-          </Link>
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-            {errorMessage || 'Course not found.'}
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  const creditCount = course.ce_credits ?? course.credits;
-  const courseDate = course.start_date || course.date;
 
   return (
     <main className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-3xl mx-auto">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 mb-6"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Course Catalog
         </Link>
 
-        {/* Course Header Card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            {course.provider && (
-              <span className="inline-flex items-center rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 border border-teal-200">
-                {course.provider}
-              </span>
-            )}
-            {course.specialty && (
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                {course.specialty}
-              </span>
-            )}
-            {creditCount && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 border border-amber-200">
-                <Award className="w-3.5 h-3.5" />
-                {creditCount} CE Credits
-              </span>
-            )}
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-slate-900">Submit a Peer CE Evaluation</h1>
+            <p className="text-sm text-slate-600 mt-1">
+              Help fellow clinicians separate high-yield clinical education from vendor sales pitches.
+            </p>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">{course.title}</h1>
-
-          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
-            {course.speaker && (
-              <div className="flex items-center gap-1.5">
-                <User className="w-4 h-4 text-slate-400" />
-                <span>{course.speaker}</span>
-              </div>
-            )}
-            {courseDate && (
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-slate-400" />
-                <span>{courseDate}</span>
-              </div>
-            )}
-            {(course.location || course.format) && (
-              <div className="flex items-center gap-1.5">
-                <MapPin className="w-4 h-4 text-slate-400" />
-                <span>{course.location || course.format}</span>
-              </div>
-            )}
-          </div>
-
-          {course.description && (
-            <p className="mt-4 text-sm text-slate-600 leading-relaxed">{course.description}</p>
+          {errorMessage && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {errorMessage}
+            </div>
           )}
 
-          {/* Aggregated Peer Metrics */}
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-slate-100">
-            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4">
-              <div className="text-xs font-medium text-slate-500">Overall Quality</div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">
-                {metrics.overall ? `${metrics.overall} / 5` : '—'}
+          {statusMessage && (
+            <div className="mb-6 flex items-center gap-2.5 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span>{statusMessage}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Course Autocomplete Search */}
+            <div className="relative">
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Select Continuing Education Course *
+              </label>
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onFocus={() => setShowDropdown(true)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setSelectedCourse(null);
+                    setShowDropdown(true);
+                  }}
+                  placeholder={
+                    loadingCourses
+                      ? 'Loading course catalog...'
+                      : 'Search by course title, provider, or speaker...'
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
+                />
               </div>
-              <div className="text-xs text-slate-500 mt-0.5">
-                {reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}
-              </div>
-            </div>
 
-            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4">
-              <div className="text-xs font-medium text-slate-500">Clinical Actionability</div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">
-                {metrics.actionability ? `${metrics.actionability} / 5` : '—'}
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">Chairside applicability</div>
-            </div>
-
-            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4">
-              <div className="text-xs font-medium text-slate-500">Vendor Bias Score</div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">
-                {metrics.bias ? `${metrics.bias} / 5` : '—'}
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">5 = completely unbiased</div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Link
-              href={`/submit?courseId=${course.id}`}
-              className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 transition-colors"
-            >
-              <MessageSquarePlus className="w-4 h-4" />
-              Write a Peer Review
-            </Link>
-
-            {course.url && (
-              <a
-                href={course.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <span>Course Website</span>
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            )}
-          </div>
-        </div>
-
-        {/* Peer Reviews & Evaluations Section */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Peer Reviews &amp; Evaluations</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {metrics.verifiedCount > 0
-                  ? `${metrics.verifiedCount} verified attendee ${
-                      metrics.verifiedCount === 1 ? 'review' : 'reviews'
-                    }`
-                  : 'Independent clinical feedback from fellow practitioners'}
-              </p>
-            </div>
-          </div>
-
-          {reviews.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-center">
-              <Sparkles className="w-6 h-6 text-teal-600 mx-auto mb-2" />
-              <div className="text-sm font-semibold text-slate-900">No peer evaluations yet</div>
-              <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto">
-                Taken this course? Share whether the clinical pearls matched the marketing and earn a
-                Verified Attendee badge.
-              </p>
-              <Link
-                href={`/submit?courseId=${course.id}`}
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-700"
-              >
-                Submit the First Review
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {reviews.map((review) => {
-                const overall = review.overall_rating ?? review.utility_rating;
-                const reviewText = review.takeaways || review.body;
-                const formattedDate = review.created_at
-                  ? new Date(review.created_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })
-                  : null;
-
-                return (
-                  <div
-                    key={review.id}
-                    className="rounded-xl border border-slate-200 bg-slate-50/50 p-5 space-y-3"
-                  >
-                    {/* Reviewer Role + Verified Attendee Badge */}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">
-                          {review.reviewer_role || 'General Dentist (DDS/DMD)'}
-                        </span>
-
-                        {review.verified_attendee && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                            Verified Attendee
-                          </span>
-                        )}
-                      </div>
-
-                      {formattedDate && (
-                        <span className="text-xs text-slate-400">{formattedDate}</span>
-                      )}
-                    </div>
-
-                    {/* Standardized 1-5 Metrics Pills */}
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      {typeof overall === 'number' && (
-                        <span className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 font-medium text-slate-700">
-                          Overall Quality: <strong className="text-slate-900">{overall}/5</strong>
-                        </span>
-                      )}
-                      {typeof review.clinical_actionability === 'number' && (
-                        <span className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 font-medium text-slate-700">
-                          Clinical Actionability:{' '}
-                          <strong className="text-slate-900">
-                            {review.clinical_actionability}/5
-                          </strong>
-                        </span>
-                      )}
-                      {typeof review.commercial_bias === 'number' && (
-                        <span className="rounded-lg bg-white border border-slate-200 px-2.5 py-1 font-medium text-slate-700">
-                          Vendor Bias:{' '}
-                          <strong className="text-slate-900">{review.commercial_bias}/5</strong>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Review Takeaways */}
-                    {reviewText && (
-                      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                        {reviewText}
-                      </p>
-                    )}
+              {selectedCourse && (
+                <div className="mt-2 flex items-center justify-between rounded-lg border border-teal-200 bg-teal-50/70 px-3.5 py-2 text-xs text-teal-900">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
+                    <span>
+                      <strong>{selectedCourse.title}</strong>
+                      {selectedCourse.provider ? ` (${selectedCourse.provider})` : ''}
+                    </span>
                   </div>
-                );
-              })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCourse(null);
+                      setSearchQuery('');
+                      setShowDropdown(true);
+                    }}
+                    className="text-teal-700 underline hover:text-teal-950 ml-3 shrink-0"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+
+              {showDropdown && !selectedCourse && (
+                <div className="absolute z-20 mt-1.5 w-full max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg divide-y divide-slate-100">
+                  {loadingCourses ? (
+                    <div className="px-4 py-3 text-sm text-slate-500">
+                      Loading courses...
+                    </div>
+                  ) : loadError ? (
+                    <div className="px-4 py-3 text-sm text-red-600">
+                      Error loading courses: {loadError}
+                    </div>
+                  ) : filteredCourses.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-slate-500">
+                      No matching courses found. Try another keyword.
+                    </div>
+                  ) : (
+                    filteredCourses.map((course) => {
+                      const creditCount = course.ce_credits ?? course.credits;
+                      return (
+                        <button
+                          key={course.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCourse(course);
+                            setSearchQuery(course.title);
+                            setShowDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="text-sm font-medium text-slate-900 line-clamp-1">
+                            {course.title}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            {course.provider || 'CE Provider'}
+                            {course.speaker ? ` • ${course.speaker}` : ''}
+                            {creditCount ? ` • ${creditCount} CE` : ''}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </div>
-          )}
+
+            {/* 1-5 Integer Rating Dropdowns */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Overall Quality (1–5)
+                </label>
+                <select
+                  value={overallRating}
+                  onChange={(e) => setOverallRating(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
+                >
+                  <option value={5}>5 — Must-Take</option>
+                  <option value={4}>4 — Very Solid</option>
+                  <option value={3}>3 — Average</option>
+                  <option value={2}>2 — Below Average</option>
+                  <option value={1}>1 — Skip</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Clinical Actionability (1–5)
+                </label>
+                <select
+                  value={clinicalActionability}
+                  onChange={(e) => setClinicalActionability(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
+                >
+                  <option value={5}>5 — Immediately Usable</option>
+                  <option value={4}>4 — Helpful Pearls</option>
+                  <option value={3}>3 — Mostly Theoretical</option>
+                  <option value={2}>2 — Low Chairside Value</option>
+                  <option value={1}>1 — Not Applicable</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Vendor Bias (1–5)
+                </label>
+                <select
+                  value={commercialBias}
+                  onChange={(e) => setCommercialBias(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
+                >
+                  <option value={5}>5 — Completely Unbiased</option>
+                  <option value={4}>4 — Minimal Vendor Pitch</option>
+                  <option value={3}>3 — Moderate Pitch</option>
+                  <option value={2}>2 — Heavy Sponsor Pitch</option>
+                  <option value={1}>1 — Pure Infomercial</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Clinical Takeaways */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Clinical Takeaways &amp; Honest Critique *
+              </label>
+              <textarea
+                rows={4}
+                value={takeaways}
+                onChange={(e) => setTakeaways(e.target.value)}
+                placeholder="What protocols, materials, or clinical pearls made this worth your time (or not)?"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
+              />
+            </div>
+
+            {/* Clinician Role */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Your Clinical Role
+              </label>
+              <select
+                value={reviewerRole}
+                onChange={(e) => setReviewerRole(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-teal-600 focus:outline-none"
+              >
+                <option value="General Dentist (DDS/DMD)">General Dentist (DDS/DMD)</option>
+                <option value="Dental Specialist">Dental Specialist</option>
+                <option value="Dental Resident / Student">Dental Resident / Student</option>
+                <option value="Dental Hygienist (RDH)">Dental Hygienist (RDH)</option>
+              </select>
+            </div>
+
+            {/* Optional Proof of Attendance Upload */}
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-slate-900">
+                    Optional: Earn a Verified Attendee Badge
+                  </div>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Upload a screenshot or PDF of your CE completion certificate. Our AI confirms
+                    course attendance and immediately discards your file—your license number is never
+                    stored or displayed.
+                  </p>
+
+                  <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    {proofFile ? (
+                      <>
+                        <FileCheck2 className="w-4 h-4 text-teal-600" />
+                        <span className="truncate max-w-[220px]">{proofFile.name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 text-slate-500" />
+                        <span>Attach Certificate (PNG, JPG, PDF)</span>
+                      </>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="hidden"
+                      onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-xl bg-teal-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-60 transition-colors"
+            >
+              {submitting ? 'Publishing Evaluation...' : 'Publish Evaluation'}
+            </button>
+          </form>
         </div>
       </div>
     </main>
   );
 }
 
-export default function CourseDetailPage() {
+export default function SubmitReviewPage() {
   return (
     <Suspense
       fallback={
         <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
           <div className="flex items-center gap-2.5 text-sm font-medium text-slate-600">
             <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
-            <span>Loading course details...</span>
+            <span>Loading evaluation form...</span>
           </div>
         </main>
       }
     >
-      <CourseDetailContent />
+      <SubmitReviewContent />
     </Suspense>
   );
 }
